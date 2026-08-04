@@ -1,6 +1,8 @@
 #![allow(warnings)]
-mod config;
+// mod config;
 // use crate::config::*;
+mod commander;
+use crate::commander::*;
 
 use chrono::{DateTime, Utc};
 
@@ -28,4 +30,10 @@ fn main() {
     let mut p1: ProjectData = ProjectData::create_project();
 
     println!("Name: {}", p1.name);
+
+    let unity_path = run_command(String::from("which"), vec!["unity"]);
+
+    let output = run_command(String::from(unity_path), vec!["p", "list", "--json"]);
+
+    println!("{}", output);
 }
