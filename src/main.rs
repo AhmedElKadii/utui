@@ -3,6 +3,8 @@
 // use crate::config::*;
 mod commander;
 use crate::commander::*;
+mod fetcher;
+use crate::fetcher::*;
 
 use chrono::{DateTime, Utc};
 
@@ -35,5 +37,7 @@ fn main() {
 
     let output = run_command(String::from(unity_path), vec!["p", "list", "--json"]);
 
-    println!("{}", output);
+    p1.name = String::from(load_json(&output).unwrap());
+
+    println!("{}", p1.name);
 }
