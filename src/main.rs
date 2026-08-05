@@ -5,39 +5,23 @@ mod commander;
 use crate::commander::*;
 mod fetcher;
 use crate::fetcher::*;
-
-use chrono::{DateTime, Utc};
-
-struct ProjectData {
-    git_tracked: bool,
-    name: String,
-    path: String,
-    editor_version: String,
-    last_opened: DateTime<Utc>
-}
-
-impl ProjectData {
-    fn create_project() -> ProjectData {
-        return ProjectData { 
-            git_tracked: false,
-            name: String::from("DEFAULT"),
-            path: String::from("HOME_DIR"),
-            editor_version: String::from("EDITOR_VERSION"),
-            last_opened: Utc::now()
-        };
-    }
-}
+mod error_handler;
 
 fn main() {
-    let mut p1: ProjectData = ProjectData::create_project();
-
-    println!("Name: {}", p1.name);
-
+    // let mut p1: ProjectData = ProjectData::create_project();
+    //
+    // println!("Name: {}", p1.name);
+    //
     let unity_path = run_command(String::from("which"), vec!["unity"]);
-
     let output = run_command(String::from(unity_path), vec!["p", "list", "--json"]);
 
-    p1.name = String::from(load_json(&output).unwrap());
+    let mut i = 0;
 
-    println!("{}", p1.name);
+    while i < 30 {
+        match fetch_project(&output, i) {
+            Some(val) => println!("{:?}", val),
+            None => println!("An error occurred")
+        }
+        i += 1;
+    }
 }
