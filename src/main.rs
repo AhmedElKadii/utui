@@ -10,10 +10,13 @@ use crate::crud::*;
 mod error_handler;
 
 fn main() {
-    match fetch_projects() {
+    match get_projects() {
         Some(projects) => {
+            let mut i = 0;
+
             for p in &projects {
-                println!("{:?}", p);
+                println!("{}: {:?}", i, p);
+                i += 1;
             }
 
             let mut choice: String = String::new();
@@ -23,7 +26,7 @@ fn main() {
                 .expect("Failed to read line");
 
             match projects.get(choice.trim().parse::<usize>().unwrap()) {
-                Some(p) => open_project(p),
+                Some(p) => delete_project(p, true),
                 None => ()
             }
         },

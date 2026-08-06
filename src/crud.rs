@@ -45,7 +45,7 @@ fn is_tracked(path: &str) -> bool {
     }
 }
 
-pub fn fetch_project(json_value: Option<Value>, index: usize) -> Option<ProjectData> {
+pub fn get_project(json_value: Option<Value>, index: usize) -> Option<ProjectData> {
     let mut project: ProjectData = ProjectData::create_project();
 
     let loaded_value = {
@@ -147,7 +147,7 @@ pub fn fetch_project(json_value: Option<Value>, index: usize) -> Option<ProjectD
     return None;
 }
 
-pub fn fetch_projects() -> Option<Vec<ProjectData>> {
+pub fn get_projects() -> Option<Vec<ProjectData>> {
     let mut projects: Vec<ProjectData> = Vec::new();
 
     match commander::run_command(String::from("which"), vec!["unity"]) {
@@ -160,7 +160,7 @@ pub fn fetch_projects() -> Option<Vec<ProjectData>> {
                                 Some(arr) => {
                                     let mut i = 0;
                                     while i < arr.len() {
-                                        match fetch_project(Some(json_value.clone()), i) {
+                                        match get_project(Some(json_value.clone()), i) {
                                             Some(p) => projects.push(p),
                                             None => ()
                                         }
@@ -203,4 +203,28 @@ pub fn open_project(project: &ProjectData) {
         },
         None => println!("No project found")
     }
+}
+
+pub fn delete_project(project: &ProjectData, remove_files: bool) {
+    match commander::run_command(String::from("which"), vec!["unity"]) {
+        Some(unity_path) =>  {
+            match commander::run_command(String::from(unity_path), vec!["p", "remove", "-f", "--json", &project.path]) {
+                // if the get_response() method gives the success message, we do the next part.
+                Some(response) => {
+                    if remove_files {
+                        match commander::run_command(String::from("rm"), vec!["-r", "-f", &project.path]) {
+                            _ => println!("Project deleted successfully")
+                        }
+                    }
+                },
+                None => ()
+            }
+        },
+        None => println!("No project found")
+    }
+}
+
+// TODO: method to pass the response of deletion/creation to user
+pub fn get_response() -> Option<String> {
+    None
 }
