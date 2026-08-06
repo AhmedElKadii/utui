@@ -192,3 +192,15 @@ pub fn fetch_projects() -> Option<Vec<ProjectData>> {
         }
     }
 }
+
+pub fn open_project(project: &ProjectData) {
+    match commander::run_command(String::from("which"), vec!["unity"]) {
+        Some(unity_path) =>  {
+            match commander::run_command(String::from(unity_path), vec!["p", "open", &project.path]) {
+                Some(result) => (),
+                None => ()
+            }
+        },
+        None => println!("No project found")
+    }
+}
