@@ -35,13 +35,14 @@ fn load_json(json_str: &str) -> Result<Value, Box<dyn Error>> {
 }
 
 fn is_tracked(path: &str) -> bool {
-    if commander::run_command(String::from("/bin/ls"), vec!["-a", path]).to_string().contains(".git") {
-        return true;
+    match commander::run_command(String::from("ls"), vec!["-a", path]) {
+        Some(output) => {
+            return output.contains(".git");
+        },
+        None => {
+            return false;
+        }
     }
-
-    println!("Location: {}", commander::run_command(String::from("ls"), vec!["-a", path]));
-    println!("Location: {}", path);
-    return false;
 }
 
 pub fn fetch_project(json_str: &str, index: usize) -> Option<ProjectData> {
@@ -58,6 +59,10 @@ pub fn fetch_project(json_str: &str, index: usize) -> Option<ProjectData> {
                     match data[index].get("path").and_then(|v| v.as_str()) {
                         Some(path) => project.path = String::from(path),
                         _ => (),
+                    }
+                    match commander::run_command(String::from("ls"), vec!["-a", &project.path]) {
+                        Some(value) => (),
+                        None => return None
                     }
                     match data[index].get("version").and_then(|v| v.as_str()) {
                         Some(version) => project.editor_version = String::from(version),
@@ -77,10 +82,8 @@ pub fn fetch_project(json_str: &str, index: usize) -> Option<ProjectData> {
                             let currentTime: DateTime<Utc> = Utc::now();
 
                             let diff = currentTime - timeModified;
-                            
-                            project.last_opened = format!("{} day(s) ago.", diff.num_days().max(0));
 
-                            if diff.num_days() < 0 {
+                            if diff.num_days() == 0 {
                                 if diff.num_hours() < 1 {
                                     if diff.num_minutes() < 1 {
                                         project.last_opened = format!("{} second(s) ago.", diff.num_seconds().max(0));
@@ -96,11 +99,11 @@ pub fn fetch_project(json_str: &str, index: usize) -> Option<ProjectData> {
                             else if diff.num_days() > 0 && diff.num_days() < 7 {
                                 project.last_opened = format!("{} day(s) ago.", diff.num_days().max(0));
                             }
-                            else if diff.num_days() >= 7 {
+                            else if diff.num_days() == 7 {
                                 project.last_opened = format!("{} week(s) ago.", diff.num_weeks().max(0));
                             }
                             else {
-                                project.last_opened = timeModified.format("%Y-%m-%d %H:%M:%S").to_string();
+                                project.last_opened = timeModified.format("%d/%m/%Y").to_string();
                             }
                         },
                         _ => (),
