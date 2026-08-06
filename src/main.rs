@@ -8,23 +8,12 @@ use crate::fetcher::*;
 mod error_handler;
 
 fn main() {
-    match run_command(String::from("which"), vec!["unity"]) {
-        Some(path) =>  {
-            match run_command(String::from(path), vec!["p", "list", "--json"]) {
-                Some(output) => {
-                    let mut i = 0;
-
-                    while i < 20 {
-                        match fetch_project(&output, i) {
-                            Some(val) => println!("{:?}", val),
-                            None => ()
-                        }
-                        i += 1;
-                    }
-                },
-                None => println!("An error occured")
+    match fetch_projects() {
+        Some(projects) => {
+            for p in projects {
+                println!("{:?}", p);
             }
         },
-        None => ()
+        None => eprintln!("Fetch failed!")
     }
 }
