@@ -209,12 +209,18 @@ pub fn delete_project(project: &ProjectData, remove_files: bool) {
     match commander::run_command(String::from("which"), vec!["unity"]) {
         Some(unity_path) =>  {
             match commander::run_command(String::from(unity_path), vec!["p", "remove", "-f", "--json", &project.path]) {
-                // if the get_response() method gives the success message, we do the next part.
                 Some(response) => {
-                    if remove_files {
-                        match commander::run_command(String::from("rm"), vec!["-r", "-f", &project.path]) {
-                            _ => println!("Project deleted successfully")
-                        }
+                    match get_response(response) {
+                        (Some(b), None) => {
+                            if remove_files {
+                                match commander::run_command(String::from("rm"), vec!["-r", "-f", &project.path]) {
+                                    Some(e) => eprintln!("{}", e),
+                                    None => println!("Project deleted successfully")
+                                }
+                            }
+                        },
+                        (Some(b), Some(e)) => eprintln!("{}", e),
+                        _ => ()
                     }
                 },
                 None => ()
@@ -225,8 +231,30 @@ pub fn delete_project(project: &ProjectData, remove_files: bool) {
 }
 
 // TODO: method to pass the response of deletion/creation to user
-pub fn get_response() -> Option<String> {
-    None
+pub fn get_response(message: String) -> (Option<bool>, Option<String>) {
+    match load_json(&message) {
+        Ok(json_value) => {
+            match json_value.get("success").and_then(|v| v.as_bool()) {
+                Some(s) => {
+                    if s { return (Some(true), None); }
+                    else {
+                        match json_value.get("data").and_then(|v| v.as_array()) {
+                            Some(arr) => {
+                                match json_value.get("error").and_then(|v| v.as_str()) {
+                                    Some(e) => return (Some(false), Some(String::from(e))),
+                                    None => ()
+                                }
+                            },
+                            None => ()
+                        }
+                    }
+                },
+                None => ()
+            }
+        },
+        Err(e) => ()
+    }
+    return (Some(false), Some(String::from("An unexpected error occured")));
 }
 
 pub fn get_editors() -> Option<Vec<String>> {
@@ -261,5 +289,10 @@ pub fn get_editors() -> Option<Vec<String>> {
         },
         None => ()
     }
+    None
+}
+
+// TODO: implement
+pub fn get_templates() -> Option<Vec<String>> {
     None
 }
