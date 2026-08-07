@@ -10,23 +10,43 @@ use crate::crud::*;
 mod error_handler;
 
 fn main() {
-    match get_projects() {
-        Some(projects) => {
-            let mut i = 0;
-
-            for p in &projects {
-                println!("{}: {:?}", i, p);
-                i += 1;
-            }
-
-            let mut choice: String = String::new();
-
-            io::stdin()
-                .read_line(&mut choice)
-                .expect("Failed to read line");
-
-            match projects.get(choice.trim().parse::<usize>().unwrap()) {
-                Some(p) => delete_project(p, true),
+    // match get_projects() {
+    //     Some(projects) => {
+    //         let mut i = 0;
+    //
+    //         for p in &projects {
+    //             println!("{}: {:?}", i, p);
+    //             i += 1;
+    //         }
+    //
+    //         let mut choice: String = String::new();
+    //
+    //         io::stdin()
+    //             .read_line(&mut choice)
+    //             .expect("Failed to read line");
+    //
+    //         match projects.get(choice.trim().parse::<usize>().unwrap()) {
+    //             Some(p) => delete_project(p, true),
+    //             None => ()
+    //         }
+    //     },
+    //     None => eprintln!("Fetch failed!")
+    // }
+    
+    match get_editors() {
+        Some(eds) => {
+            match eds.get(0) {
+                Some(ed) => {
+                    println!("{}", ed);
+                    match get_templates(ed.clone()) {
+                        Some(templates) => {
+                            for t in templates {
+                                println!("{:?}", t);
+                            }
+                        },
+                        None => println!("Failed to get templates")
+                    }
+                },
                 None => ()
             }
         },
