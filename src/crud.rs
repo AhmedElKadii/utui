@@ -228,3 +228,38 @@ pub fn delete_project(project: &ProjectData, remove_files: bool) {
 pub fn get_response() -> Option<String> {
     None
 }
+
+pub fn get_editors() -> Option<Vec<String>> {
+    let mut editors: Vec<String> = Vec::new();
+
+    match commander::run_command(String::from("which"), vec!["unity"]) {
+        Some(unity_path) =>  {
+            match commander::run_command(String::from(unity_path), vec!["editors", "list", "--installed", "--json"]) {
+                Some(result) => {
+                    match load_json(&result) {
+                        Ok(json_value) => {
+                            match json_value.get("data").and_then(|v| v.as_array()) {
+                                Some(arr) => {
+                                    let mut i = 0;
+                                    while i < arr.len() {
+                                        match arr[i].get("version").and_then(|v| v.as_str()) {
+                                            Some(e) => editors.push(String::from(e)),
+                                            None => ()
+                                        }
+                                        i += 1;
+                                    }
+                                    return Some(editors)
+                                },
+                                None => ()
+                            }
+                        },
+                        Err(e) => ()
+                    }
+                },
+                None => println!("No editors found")
+            }
+        },
+        None => ()
+    }
+    None
+}
