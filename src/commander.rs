@@ -17,3 +17,7 @@ pub fn run_command(cmd: String, args: Vec<&str>) -> io::Result<(bool, String)> {
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
     Ok((false, stderr))
 }
+
+// TODO: use to cleanup crud.rs
+pub fn run_unity_command() {
+}

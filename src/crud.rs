@@ -8,6 +8,8 @@ use crate::commander;
 use crate::error_handler;
 use chrono::prelude::*;
 
+//TODO: this file needs heavy cleanup and optimization.
+
 #[derive(Debug)]
 pub struct ProjectData {
     pub git_tracked: bool,
@@ -18,7 +20,7 @@ pub struct ProjectData {
 }
 
 impl ProjectData {
-    fn create_project() -> ProjectData {
+    fn create_default_project() -> ProjectData {
         return ProjectData { 
             git_tracked: false,
             name: String::from("DEFAULT"),
@@ -63,7 +65,7 @@ pub struct TemplateData {
 }
 
 impl TemplateData {
-    fn create_template() -> TemplateData {
+    fn create_default_template() -> TemplateData {
         return TemplateData {
             name: String::from("DEFAULT"),
             display_name: String::from("DEFAULT"),
@@ -97,7 +99,7 @@ fn is_tracked(path: &str) -> bool {
 }
 
 pub fn get_project(json_value: Option<Value>, index: usize) -> Option<ProjectData> {
-    let mut project: ProjectData = ProjectData::create_project();
+    let mut project: ProjectData = ProjectData::create_default_project();
 
     let loaded_value = {
         match json_value {
@@ -333,6 +335,12 @@ pub fn delete_project(project: &ProjectData, remove_files: bool) {
     }
 }
 
+/* BUG:
+ * unitycli seems to be outputting errors as this:
+ * {"error":"UnityVersion: version argument is not a valid unity version"}
+ * instead of what i was expecting, should look into it further to ensure
+ * this function here isn't obscelete */
+
 pub fn get_response(message: String) -> Result<(bool, String), String> {
     match load_json(&message) {
         Ok(json_value) => {
@@ -409,14 +417,13 @@ pub fn get_editors() -> Option<Vec<String>> {
 }
 
 pub fn get_template(json_value: Option<Value>, editor_version: Option<String>, index: usize) -> Option<TemplateData> {
-    let mut template: TemplateData = TemplateData::create_template();
+    let mut template: TemplateData = TemplateData::create_default_template();
     let mut editor_arg = String::from("");
 
     match editor_version {
         Some(v) => {
-            editor_arg = String::from("--editor=\"");
+            editor_arg = String::from("--editor=");
             editor_arg.push_str(&v);
-            editor_arg.push_str("\"");
         },
         None => {
         }
@@ -433,7 +440,7 @@ pub fn get_template(json_value: Option<Value>, editor_version: Option<String>, i
                                 match load_json(&o) {
                                     Ok(val) => val,
                                     Err(e) => {
-                                        eprintln!("Failed to load json");
+                                        eprintln!("{}", e);
                                         return None;
                                     }
                                 }
@@ -474,7 +481,7 @@ pub fn get_template(json_value: Option<Value>, editor_version: Option<String>, i
                     _ => (),
                 }
                 match data[index].get("description").and_then(|v| v.as_str()) {
-                    Some(desc) => template.display_name = String::from(desc),
+                    Some(desc) => template.description = String::from(desc),
                     _ => (),
                 }
                 match data[index].get("type").and_then(|v| v.as_str()) {
@@ -492,7 +499,17 @@ pub fn get_template(json_value: Option<Value>, editor_version: Option<String>, i
                 match data[index].get("buildPlatforms").and_then(|v| v.as_array()) {
                     Some(platforms) => {
                         for p in platforms {
-                            template.build_platforms.push(BuildPlatform::from_str(&p.to_string()).unwrap());
+                            match p.as_str() {
+                                Some(p_str) => {
+                                    match BuildPlatform::from_str(p_str) {
+                                        Ok(bp) => {
+                                            template.build_platforms.push(bp);
+                                        },
+                                        _ => eprintln!("Unknown build platform: {}", p_str)
+                                    }
+                                },
+                                None => ()
+                            }
                         }
                     },
                     _ => (),
@@ -511,9 +528,8 @@ pub fn get_template(json_value: Option<Value>, editor_version: Option<String>, i
 
 pub fn get_templates(editor_version: String) -> Option<Vec<TemplateData>> {
     let mut templates: Vec<TemplateData> = Vec::new();
-    let mut editor_arg = String::from("--editor=\"");
+    let mut editor_arg = String::from("--editor=");
     editor_arg.push_str(&editor_version);
-    editor_arg.push_str("\"");
 
     println!("{:?}", editor_arg);
 
@@ -542,7 +558,7 @@ pub fn get_templates(editor_version: String) -> Option<Vec<TemplateData>> {
                             }
                         },
                         Err(e) => {
-                            eprintln!("Failed to load json");
+                            eprintln!("{}", e);
                             return None;
                         }
                     }
@@ -566,4 +582,9 @@ pub fn get_templates(editor_version: String) -> Option<Vec<TemplateData>> {
             return None;
         }
     }
+}
+
+// TODO: implement
+pub fn create_project(editor_version: String, template_name: String, path: String) -> Result<bool, String> {
+    return Err(String::from(""));
 }

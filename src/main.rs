@@ -41,7 +41,7 @@ fn main() {
                     match get_templates(ed.clone()) {
                         Some(templates) => {
                             for t in templates {
-                                println!("{:?}", t);
+                                println!("{:#?}", t);
                             }
                         },
                         None => println!("Failed to get templates")
