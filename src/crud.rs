@@ -49,19 +49,19 @@ enum BuildPlatform {
     TVOS
 }
 
-#[derive(Debug, EnumString)]
-enum TemplateStatus { NULL, DOWNLOADABLE, UPGRADABLE, READY }
+#[derive(Debug, EnumString, PartialEq, Eq)]
+pub enum TemplateStatus { NULL, DOWNLOADABLE, UPGRADABLE, READY }
 
 #[derive(Debug)]
 pub struct TemplateData {
-    name: String,
-    display_name: String,
-    description: String,
-    template_type: TemplateType,
-    preview_image: String,
-    render_pipeline: RenderPipeline,
-    build_platforms: Vec<BuildPlatform>,
-    status: TemplateStatus
+    pub name: String,
+    pub display_name: String,
+    pub description: String,
+    pub template_type: TemplateType,
+    pub preview_image: String,
+    pub render_pipeline: RenderPipeline,
+    pub build_platforms: Vec<BuildPlatform>,
+    pub status: TemplateStatus
 }
 
 impl TemplateData {
@@ -531,11 +531,9 @@ pub fn get_templates(editor_version: String) -> Option<Vec<TemplateData>> {
     let mut editor_arg = String::from("--editor=");
     editor_arg.push_str(&editor_version);
 
-    println!("{:?}", editor_arg);
-
     match commander::run_command(String::from("which"), vec!["unity"]) {
-        Ok((true, o)) =>  {
-            match commander::run_command(String::from(o), vec!["templates", "list", &editor_arg, "--json"]) {
+        Ok((true, unity_path)) =>  {
+            match commander::run_command(String::from(unity_path), vec!["templates", "list", &editor_arg, "--json"]) {
                 Ok((true, o)) => {
                     match load_json(&o) {
                         Ok(json_value) => {
@@ -585,6 +583,43 @@ pub fn get_templates(editor_version: String) -> Option<Vec<TemplateData>> {
 }
 
 // TODO: implement
-pub fn create_project(editor_version: String, template_name: String, path: String) -> Result<bool, String> {
-    return Err(String::from(""));
+pub fn create_project(project_name: String, editor_version: String, template_name: String, path: String, is_ready: bool) -> Result<(bool, String), String> {
+    let mut editor_arg = String::from("--editor-version=");
+    editor_arg.push_str(&editor_version);
+    let mut template_arg = String::from("--template=");
+    template_arg.push_str(&template_name);
+    let mut path_arg = String::from("--path=");
+    path_arg.push_str(&path);
+
+    if !is_ready {
+        println!("Download available, please hold...");
+    }
+
+    match commander::run_command(String::from("which"), vec!["unity"]) {
+        Ok((true, o)) =>  {
+            match commander::run_command(String::from(o), vec!["p", "create", &project_name, &editor_arg, &template_arg, &path_arg, "--json"]) {
+                Ok((true, o)) => {
+                    println!("Project created successfully");
+                    return Ok((true, o));
+                },
+                Ok((false, e)) => {
+                    eprintln!("{}", e);
+                    return Ok((false, e));
+                },
+                Err(e) => {
+                    eprintln!("{}", e);
+                    return Ok((false, String::from("An unknown error occured")));
+                }
+            }
+        },
+        Ok((false, e)) => {
+            eprintln!("{}", e);
+            return Ok((false, e));
+        },
+        Err(e) => {
+            eprintln!("{}", e);
+        }
+    }
+
+    return Err(String::from("An error occured, please try again."));
 }
