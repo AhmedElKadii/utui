@@ -1,15 +1,23 @@
 use std::process::{Command, Stdio};
-use std::io::{self, Write};
+use std::io;
 
-pub fn run_command(cmd: String, args: Vec<&str>) -> String {
+pub fn run_command(cmd: String, args: Vec<&str>) -> io::Result<(bool, String)> {
     let output = Command::new(cmd.trim())
         .args(args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .output()
-        .expect("failed to run command...");
+        .output()?;
 
-    let stdout = String::from_utf8(output.stdout).unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
 
-    return stdout;
+    if !stdout.is_empty() {
+        return Ok((true, stdout));
+    }
+
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    Ok((false, stderr))
+}
+
+// TODO: use to cleanup crud.rs
+pub fn run_unity_command() {
 }
