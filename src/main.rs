@@ -1,5 +1,9 @@
 #![allow(warnings)]
 use std::io;
+use color_eyre::eyre::Result;
+use crossterm::event;
+use crossterm::event::{ KeyCode, KeyModifiers };
+use ratatui::widgets::ListState;
 
 // mod config;
 // use crate::config::*;
@@ -8,9 +12,70 @@ use crate::commander::*;
 mod crud;
 use crate::crud::*;
 mod error_handler;
+mod ui;
+use crate::ui::*;
 
-fn main() {
-    create_proj();
+fn main() -> color_eyre::Result<()> {
+    color_eyre::install()?;
+
+    let mut project_names: Vec<String> = Vec::new();
+    let mut project_datas: Vec<ProjectData> = Vec::new();
+
+    match get_projects() {
+        Some(projects) => {
+            project_names = projects.iter().map(|p| p.name.clone() as String).collect();
+            project_datas = projects;
+        },
+        None => ()
+    }
+
+    let mut list_state = ListState::default().with_selected(Some(0));
+    ratatui::run(|terminal| {
+        loop {
+            terminal.draw(|frame| render(frame, &mut list_state, project_names.clone()))?;
+            if let Some(key) = event::read()?.as_key_press_event() {
+                match key.code {
+                    KeyCode::Char('j') | KeyCode::Down => list_state.select_next(),
+                    KeyCode::Char('n') if key.modifiers.contains(KeyModifiers::CONTROL) => list_state.select_next(),
+                    KeyCode::Char('k') | KeyCode::Up => list_state.select_previous(),
+                    KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) => list_state.select_previous(),
+                    KeyCode::Char('d') => {
+                        match list_state.selected_mut() {
+                            Some(i) => {
+                                match project_datas.get(i.clone()) {
+                                    Some(pd) => {
+                                        delete_project(pd, true);
+                                        match get_projects() {
+                                            Some(projects) => {
+                                                project_names = projects.iter().map(|p| p.name.clone() as String).collect();
+                                                project_datas = projects;
+                                            },
+                                            None => ()
+                                        }
+                                    },
+                                    None => ()
+                                }
+                            },
+                            None => ()
+                        }
+                    },
+                    KeyCode::Char('o') => {
+                        match list_state.selected_mut() {
+                            Some(i) => {
+                                match project_datas.get(i.clone()) {
+                                    Some(pd) => open_project(pd),
+                                    None => ()
+                                }
+                            },
+                            None => ()
+                        }
+                    },
+                    KeyCode::Char('q') | KeyCode::Esc => break Ok(()),
+                    _ => {}
+                }
+            }
+        }
+    })
 }
 
 fn list_projs() {
