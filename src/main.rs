@@ -21,13 +21,7 @@ fn main() -> color_eyre::Result<()> {
     let mut project_names: Vec<String> = Vec::new();
     let mut project_datas: Vec<ProjectData> = Vec::new();
 
-    match get_projects() {
-        Some(projects) => {
-            project_names = projects.iter().map(|p| p.name.clone() as String).collect();
-            project_datas = projects;
-        },
-        None => ()
-    }
+    refresh(&mut project_names, &mut project_datas);
 
     let mut list_state = ListState::default().with_selected(Some(0));
     ratatui::run(|terminal| {
@@ -52,39 +46,10 @@ fn main() -> color_eyre::Result<()> {
                         change_list(&mut list_state, false);
                     },
                     KeyCode::Enter => expand_project(list_state.selected(), &mut project_names, &project_datas),
-                    KeyCode::Char('d') => {
-                        match list_state.selected_mut() {
-                            Some(i) => {
-                                match project_datas.get(i.clone()) {
-                                    Some(pd) => {
-                                        delete_project(pd, true);
-                                        match get_projects() {
-                                            Some(projects) => {
-                                                project_names = projects.iter().map(|p| p.name.clone() as String).collect();
-                                                project_datas = projects;
-                                            },
-                                            None => ()
-                                        }
-                                    },
-                                    None => ()
-                                }
-                            },
-                            None => ()
-                        }
-                    },
-                    KeyCode::Char('o') => {
-                        match list_state.selected_mut() {
-                            Some(i) => {
-                                match project_datas.get(i.clone()) {
-                                    Some(pd) => open_project(pd),
-                                    None => ()
-                                }
-                            },
-                            None => ()
-                        }
-                    },
+                    KeyCode::Char('d') => proj_delete(&mut list_state, &mut project_names, &project_datas),
+                    KeyCode::Char('o') => proj_open(&mut list_state, &project_datas),
                     KeyCode::Char('q') | KeyCode::Esc => break Ok(()),
-                    _ => {}
+                    _ => ()
                 }
             }
         }

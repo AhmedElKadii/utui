@@ -5,7 +5,7 @@ use ratatui::style::{Color, Modifier, Style, Stylize};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{List, ListDirection, ListState};
 
-use crate::crud::{self, ProjectData};
+use crate::crud::{self, ProjectData, open_project, delete_project, get_projects};
 
 pub fn render(frame: &mut Frame, list_state: &mut ListState, project_names: Vec<String>) {
     let constraints = [
@@ -54,6 +54,62 @@ pub fn change_list(list_state: &mut ListState, next: bool) {
     }
 }
 
+fn proj_details(project: &ProjectData) -> String {
+    let name = &project.name;
+    let path = &project.path;
+
+    let str = format!("{name}
+{path}");
+
+    return str;
+}
+
+pub fn refresh(mut project_names: &mut Vec<String>, mut project_datas: &mut Vec<ProjectData>) {
+    match get_projects() {
+        Some(projects) => {
+            *project_names = projects.iter().map(|p| p.name.clone() as String).collect();
+            *project_datas = projects.clone();
+        },
+        None => ()
+    }
+
+    if project_names.len() == 0 {
+        project_names.push(String::from("No projects found... press C to create."));
+    }
+}
+
+pub fn proj_open(list_state: &mut ListState, project_datas: &Vec<ProjectData>) {
+    match list_state.selected_mut() {
+        Some(i) => {
+            match project_datas.get(i.clone()) {
+                Some(pd) => open_project(pd),
+                None => ()
+            }
+        },
+        None => ()
+    }
+}
+
+pub fn proj_delete(list_state: &mut ListState, mut project_names: &mut Vec<String>, project_datas: &Vec<ProjectData>) {
+    match list_state.selected_mut() {
+        Some(i) => {
+            match project_datas.get(i.clone()) {
+                Some(pd) => {
+                    delete_project(pd, true);
+                    match get_projects() {
+                        Some(projects) => {
+                            *project_names = projects.iter().map(|p| p.name.clone() as String).collect::<Vec<String>>();
+                        },
+                        None => ()
+                    }
+                },
+                None => ()
+            }
+        },
+        None => ()
+    }
+}
+
 pub fn expand_project(index: Option<usize>, project_names: &mut Vec<String>, project_datas: &Vec<ProjectData>) {
     match index {
         Some(i) => {
@@ -92,14 +148,3 @@ pub fn collapse_project(index: Option<usize>, project_names: &mut Vec<String>) {
         None => ()
     }
 }
-
-fn proj_details(project: &ProjectData) -> String {
-    let name = &project.name;
-    let path = &project.path;
-
-    let str = format!("{name}
-{path}");
-
-    return str;
-}
-
