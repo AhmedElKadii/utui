@@ -21,13 +21,7 @@ fn main() -> color_eyre::Result<()> {
     let mut project_names: Vec<String> = Vec::new();
     let mut project_datas: Vec<ProjectData> = Vec::new();
 
-    match get_projects() {
-        Some(projects) => {
-            project_names = projects.iter().map(|p| p.name.clone() as String).collect();
-            project_datas = projects;
-        },
-        None => ()
-    }
+    refresh(&mut project_names, &mut project_datas);
 
     let mut list_state = ListState::default().with_selected(Some(0));
     ratatui::run(|terminal| {
@@ -35,43 +29,28 @@ fn main() -> color_eyre::Result<()> {
             terminal.draw(|frame| render(frame, &mut list_state, project_names.clone()))?;
             if let Some(key) = event::read()?.as_key_press_event() {
                 match key.code {
-                    KeyCode::Char('j') | KeyCode::Down => list_state.select_next(),
-                    KeyCode::Char('n') if key.modifiers.contains(KeyModifiers::CONTROL) => list_state.select_next(),
-                    KeyCode::Char('k') | KeyCode::Up => list_state.select_previous(),
-                    KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) => list_state.select_previous(),
-                    KeyCode::Char('d') => {
-                        match list_state.selected_mut() {
-                            Some(i) => {
-                                match project_datas.get(i.clone()) {
-                                    Some(pd) => {
-                                        delete_project(pd, true);
-                                        match get_projects() {
-                                            Some(projects) => {
-                                                project_names = projects.iter().map(|p| p.name.clone() as String).collect();
-                                                project_datas = projects;
-                                            },
-                                            None => ()
-                                        }
-                                    },
-                                    None => ()
-                                }
-                            },
-                            None => ()
-                        }
+                    KeyCode::Char('j') | KeyCode::Down => {
+                        collapse_project(list_state.selected(), &mut project_names);
+                        change_list(&mut list_state, true);
                     },
-                    KeyCode::Char('o') => {
-                        match list_state.selected_mut() {
-                            Some(i) => {
-                                match project_datas.get(i.clone()) {
-                                    Some(pd) => open_project(pd),
-                                    None => ()
-                                }
-                            },
-                            None => ()
-                        }
+                    KeyCode::Char('n') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        collapse_project(list_state.selected(), &mut project_names);
+                        change_list(&mut list_state, true);
                     },
+                    KeyCode::Char('k') | KeyCode::Up => {
+                        collapse_project(list_state.selected(), &mut project_names);
+                        change_list(&mut list_state, false);
+                    },
+                    KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        collapse_project(list_state.selected(), &mut project_names);
+                        change_list(&mut list_state, false);
+                    },
+                    KeyCode::Enter => expand_project(list_state.selected(), &mut project_names, &project_datas),
+                    KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::SHIFT) => proj_delete(&mut list_state, &mut project_names, &project_datas, true),
+                    KeyCode::Char('d') => proj_delete(&mut list_state, &mut project_names, &project_datas, false),
+                    KeyCode::Char('o') => proj_open(&mut list_state, &project_datas),
                     KeyCode::Char('q') | KeyCode::Esc => break Ok(()),
-                    _ => {}
+                    _ => ()
                 }
             }
         }
