@@ -46,7 +46,8 @@ fn main() -> color_eyre::Result<()> {
                         change_list(&mut list_state, false);
                     },
                     KeyCode::Enter => expand_project(list_state.selected(), &mut project_names, &project_datas),
-                    KeyCode::Char('d') => proj_delete(&mut list_state, &mut project_names, &project_datas),
+                    KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::SHIFT) => proj_delete(&mut list_state, &mut project_names, &project_datas, true),
+                    KeyCode::Char('d') => proj_delete(&mut list_state, &mut project_names, &project_datas, false),
                     KeyCode::Char('o') => proj_open(&mut list_state, &project_datas),
                     KeyCode::Char('q') | KeyCode::Esc => break Ok(()),
                     _ => ()
