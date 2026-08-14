@@ -60,9 +60,15 @@ pub fn change_list(list_state: &mut ListState, next: bool) {
 fn proj_details(project: &ProjectData) -> String {
     let name = &project.name;
     let path = &project.path;
+    let git_status = if project.git_tracked { "tracked" } else { "untracked" };
+    let version = &project.editor_version;
+    let last_opened = &project.last_opened;
 
     let str = format!("{name}
-{path}");
+Last Opened: {last_opened}
+Git Status: {git_status}
+Editor Version: {version}
+Path: {path}");
 
     return str;
 }
