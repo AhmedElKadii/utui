@@ -15,42 +15,86 @@ mod error_handler;
 mod ui;
 use crate::ui::*;
 
+#[derive(Default, PartialEq)]
+enum Dialogues {
+    #[default]
+    NULL,
+    DELETE_CONFIRM(bool),
+}
+
+#[derive(Default, PartialEq)]
+enum DialogueSelection {
+    #[default]
+    OK,
+    CANCEL
+}
+
+#[derive(Default)]
+struct DialogueState {
+    current_dialogue: Dialogues,
+    selection: DialogueSelection,
+    selected_project: Option<ProjectData>
+}
+
+#[derive(Default)]
+struct AppState {
+    list_state: ListState,
+    dialogue_state: DialogueState,
+    list_items: Vec<String>,
+    project_data: Vec<ProjectData>
+}
+
 fn main() -> color_eyre::Result<()> {
     color_eyre::install()?;
 
-    let mut project_names: Vec<String> = Vec::new();
-    let mut project_datas: Vec<ProjectData> = Vec::new();
+    let mut app_state = AppState::default();
+    app_state.list_state = ListState::default().with_selected(Some(0));
 
-    refresh(&mut project_names, &mut project_datas);
+    refresh(&mut app_state);
 
-    let mut list_state = ListState::default().with_selected(Some(0));
     ratatui::run(|terminal| {
         loop {
-            terminal.draw(|frame| render(frame, &mut list_state, project_names.clone()))?;
+            terminal.draw(|frame| render(frame, &mut app_state))?;
             if let Some(key) = event::read()?.as_key_press_event() {
-                match key.code {
-                    KeyCode::Char('j') | KeyCode::Down => {
-                        collapse_project(list_state.selected(), &mut project_names);
-                        change_list(&mut list_state, true);
+                match app_state.dialogue_state.current_dialogue {
+                    Dialogues::NULL => {
+                        match key.code {
+                            KeyCode::Char('j') | KeyCode::Down => {
+                                change_list(&mut app_state, true);
+                            },
+                            KeyCode::Char('n') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                change_list(&mut app_state, true);
+                            },
+                            KeyCode::Char('k') | KeyCode::Up => {
+                                change_list(&mut app_state, false);
+                            },
+                            KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                change_list(&mut app_state, false);
+                            },
+                            KeyCode::Enter => expand_project(&mut app_state),
+                            KeyCode::Char('D') | KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::SHIFT) => open_delete_dialogue(&mut app_state, true),
+                            KeyCode::Char('d') => open_delete_dialogue(&mut app_state, false),
+                            KeyCode::Char('o') => proj_open(&mut app_state),
+                            KeyCode::Char('q') => break Ok(()),
+                            _ => ()
+                        }
                     },
-                    KeyCode::Char('n') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                        collapse_project(list_state.selected(), &mut project_names);
-                        change_list(&mut list_state, true);
-                    },
-                    KeyCode::Char('k') | KeyCode::Up => {
-                        collapse_project(list_state.selected(), &mut project_names);
-                        change_list(&mut list_state, false);
-                    },
-                    KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                        collapse_project(list_state.selected(), &mut project_names);
-                        change_list(&mut list_state, false);
-                    },
-                    KeyCode::Enter => expand_project(list_state.selected(), &mut project_names, &project_datas),
-                    KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::SHIFT) => proj_delete(&mut list_state, &mut project_names, &project_datas, true),
-                    KeyCode::Char('d') => proj_delete(&mut list_state, &mut project_names, &project_datas, false),
-                    KeyCode::Char('o') => proj_open(&mut list_state, &project_datas),
-                    KeyCode::Char('q') | KeyCode::Esc => break Ok(()),
-                    _ => ()
+                    _ => {
+                        match key.code {
+                            KeyCode::Char('l') | KeyCode::Right => app_state.dialogue_state.selection = DialogueSelection::CANCEL,
+                            KeyCode::Char('h') | KeyCode::Left => app_state.dialogue_state.selection = DialogueSelection::OK,
+                            KeyCode::Esc => {
+                                app_state.dialogue_state.selected_project = None;
+                                app_state.dialogue_state.current_dialogue = Dialogues::NULL;
+                            },
+                            KeyCode::Enter => {
+                                execute_selection(&mut app_state);
+                                continue;
+                            },
+                            KeyCode::Char('q') => break Ok(()),
+                            _ => ()
+                        }
+                    }
                 }
             }
         }

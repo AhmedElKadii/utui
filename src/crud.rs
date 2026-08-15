@@ -10,7 +10,7 @@ use chrono::prelude::*;
 
 //TODO: this file needs heavy cleanup and optimization.
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct ProjectData {
     pub git_tracked: bool,
     pub name: String,
