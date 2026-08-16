@@ -1,14 +1,15 @@
 use crossterm::event::{self, KeyCode};
 use ratatui::Frame;
 use ratatui::buffer::Buffer;
-use ratatui::layout::{Constraint, Direction, Flex, Layout, Rect};
+use ratatui::layout::{Alignment, Constraint, Direction, Flex, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style, Stylize};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Clear, Fill, List, ListDirection, ListState, Paragraph, Widget, Wrap};
+use ratatui::widgets::{Block, Clear, Fill, List, ListDirection, ListState, Padding, Paragraph, Widget, Wrap};
 
 use crate::Dialogues::DELETE_CONFIRM;
 use crate::{AppState, Dialogues, DialogueSelection};
-use crate::crud::{self, ProjectData, open_project, delete_project, get_projects};
+use crate::crud::{self, ProjectData, create_project, delete_project, get_projects, open_project};
+use crate::input::{self, InputStep};
 
 pub fn render(frame: &mut Frame, app_state: &mut AppState) {
     let constraints = [
@@ -25,90 +26,158 @@ pub fn render(frame: &mut Frame, app_state: &mut AppState) {
     ]);
     frame.render_widget(title.left_aligned(), top);
 
-    if app_state.list_items.len() > 0 {
-        render_projects_list(frame, middle, &mut app_state.list_state, app_state.list_items.clone());
-    }
-    else {
-        let empty = Line::from_iter([
-            Span::from(" No projects available...").bold(),
-            Span::from(" press c to create a project or a to add an existing one."),
-        ]);
-        frame.render_widget(empty.left_aligned(), middle);
-    }
-
-    let area = frame.area();
-
     match app_state.dialogue_state.current_dialogue {
         Dialogues::DELETE_CONFIRM(with_dir) => {
-            let popup_block = Block::bordered().title("Confirm Delete");
-
-            let centered_area = area.centered(Constraint::Percentage(30), Constraint::Percentage(20));
-            frame.render_widget(Clear, centered_area);
-
-            let chunks = Layout::default()
-                .direction(Direction::Vertical)
-                .margin(1)
-                .constraints([
-                    Constraint::Percentage(60),
-                    Constraint::Percentage(40),
-                ])
-                .split(centered_area);
-
-            let mut project_name = String::from("undefined");
             if let Some(project) = &app_state.dialogue_state.selected_project {
-                project_name = project.name.clone();
+                let mut message = format!("Are you sure you want to delete {}", project.name);
+                if with_dir { message.push_str(" and its files?"); }
+                else { message.push('?'); }
+
+                popup_dialogue(
+                    app_state, 
+                    frame, 
+                    String::from("Confirm Delete"), 
+                    message,
+                    Some(String::from("DELETE")), 
+                    Some(String::from("CANCEL"))
+                );
             }
-
-            let mut paragraph = Paragraph::new("");
-            match with_dir {
-                true => {
-                    paragraph = Paragraph::new(format!("Are you sure you want to permanently delete {project_name} and its files?"))
-                        .block(popup_block)
-                        .wrap(Wrap { trim: true })
-                        .centered()
+        },
+        Dialogues::INPUT => {
+            match app_state.input_handler.step {
+                InputStep::Name => {
+                    app_state.input_handler.render_input_box(frame, "Project Name");
                 },
-                _ => {
-                    paragraph = Paragraph::new(format!("Are you sure you want to permanently delete {project_name}?"))
-                        .block(popup_block)
-                        .wrap(Wrap { trim: true })
-                        .centered()
+                InputStep::Path => {
+                    app_state.input_handler.render_input_box(frame, "Project Path");
                 },
-            }
-            frame.render_widget(paragraph, centered_area);
-
-            let button_chunks = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([
-                    Constraint::Fill(1),
-                    Constraint::Fill(3),
-                    Constraint::Fill(1),
-                    Constraint::Fill(3),
-                    Constraint::Fill(1),
-                ])
-                .split(chunks[1]);
-
-            let ok = Block::bordered();
-            let mut ok_text = Paragraph::new("DELETE").block(ok.clone()).centered();
-            let cancel = Block::bordered();
-            let mut cancel_text = Paragraph::new("CANCEL").block(cancel.clone()).centered();
-            match app_state.dialogue_state.selection {
-                DialogueSelection::OK => {
-                    ok.style(Modifier::REVERSED);
-                    ok_text = ok_text.style(Modifier::REVERSED);
+                InputStep::Version => {
+                    // TODO: change to list!
+                    app_state.input_handler.render_input_box(frame, "Editor Version");
                 },
-                DialogueSelection::CANCEL => {
-                    cancel.style(Modifier::REVERSED);
-                    cancel_text = cancel_text.style(Modifier::REVERSED);
+                InputStep::Template => {
+                    // TODO: CHANGE TO LIST!
+                    app_state.input_handler.render_input_box(frame, "Project Template");
+                },
+                InputStep::Complete => {
+                    match &app_state.dialogue_state.selected_project {
+                        Some(project) => match create_project(&project) {
+                            // TODO: add error handling popup here!
+                            Ok((true, o)) => (),
+                            Ok((false, e)) => (),
+                            _ => ()
+                        },
+                        _ => ()
+                    }
+                    reset_state(app_state);
+                    refresh(app_state);
                 },
                 _ => ()
             }
-            frame.render_widget(ok_text, button_chunks[1]);
-            frame.render_widget(cancel_text, button_chunks[3]);
-        }
-        _ => (),
+            // refresh(app_state);
+        },
+        _ => {
+            if app_state.list_items.len() > 0 {
+                render_projects_list(frame, middle, &mut app_state.list_state, app_state.list_items.clone());
+            }
+            else {
+                let empty = Line::from_iter([
+                    Span::from(" No projects available...").bold(),
+                    Span::from(" press c to create a project or a to add an existing one."),
+                ]);
+                frame.render_widget(empty.left_aligned(), middle);
+            }
+        },
     }
 
     render_help_text(frame, bottom);
+}
+
+fn popup_dialogue(
+    app_state: &mut AppState,
+    frame: &mut Frame,
+    title: String,
+    message: String,
+    ok_label: Option<String>,
+    cancel_label: Option<String>,
+) {
+    let area = frame.area();
+
+    const MIN_WIDTH: u16 = 45;
+    const MIN_HEIGHT: u16 = 9;
+
+    let popup_width = ((area.width as f32 * 0.4) as u16)
+        .max(MIN_WIDTH)
+        .min(area.width);
+    let popup_height = ((area.height as f32 * 0.3) as u16)
+        .max(MIN_HEIGHT)
+        .min(area.height);
+
+    let centered_area = area.centered(Constraint::Length(popup_width), Constraint::Length(popup_height));
+    frame.render_widget(Clear, centered_area);
+
+    let popup_block = Block::bordered().title(title);
+    let inner_area = popup_block.inner(centered_area);
+    frame.render_widget(popup_block, centered_area);
+
+    let chunks = Layout::vertical([
+        Constraint::Length(1), // Top margin
+        Constraint::Fill(1),   // Message body
+        Constraint::Length(1), // Bottom margin
+        Constraint::Length(3), // Button row
+    ])
+    .split(inner_area);
+
+    let message_block = Block::new().padding(Padding::horizontal(1)); 
+    let paragraph = Paragraph::new(message)
+        .block(message_block)
+        .wrap(Wrap { trim: true })
+        .alignment(Alignment::Center);
+    
+    frame.render_widget(paragraph, chunks[1]);
+
+    let button_chunks = Layout::horizontal([
+        Constraint::Fill(1),
+        Constraint::Length(ok_label.as_ref().map_or(0, |s| s.chars().count() as u16 + 4)),
+        Constraint::Length(2), 
+        Constraint::Length(cancel_label.as_ref().map_or(0, |s| s.chars().count() as u16 + 4)),
+        Constraint::Fill(1),
+    ])
+    .split(chunks[3]);
+
+    let ok_style = if app_state.dialogue_state.selection == DialogueSelection::OK {
+        Modifier::REVERSED
+    } else {
+        Modifier::empty()
+    };
+    let cancel_style = if app_state.dialogue_state.selection == DialogueSelection::CANCEL {
+        Modifier::REVERSED
+    } else {
+        Modifier::empty()
+    };
+
+    if let Some(ol) = ok_label {
+        let ok_btn = Paragraph::new(ol)
+            .block(Block::bordered().padding(Padding::horizontal(1)))
+            .style(ok_style)
+            .alignment(Alignment::Center);
+        frame.render_widget(ok_btn, button_chunks[1]);
+    }
+
+    if let Some(cl) = cancel_label {
+        let cancel_btn = Paragraph::new(cl)
+            .block(Block::bordered().padding(Padding::horizontal(1)))
+            .style(cancel_style)
+            .alignment(Alignment::Center);
+        frame.render_widget(cancel_btn, button_chunks[3]);
+    }
+}
+
+fn reset_state(app_state: &mut AppState) {
+    app_state.list_state.select(app_state.selected_index);
+    app_state.dialogue_state.selected_project = None;
+    app_state.dialogue_state.current_dialogue = Dialogues::NULL;
+    app_state.input_handler.step = InputStep::Name;
 }
 
 pub fn execute_selection(app_state: &mut AppState) {
@@ -118,12 +187,37 @@ pub fn execute_selection(app_state: &mut AppState) {
                 DialogueSelection::OK => proj_delete(app_state),
                 DialogueSelection::CANCEL => ()
             }
+            reset_state(app_state);
+        },
+        Dialogues::INPUT => {
+            app_state.input_handler.submit_message();
+            match &mut app_state.dialogue_state.selected_project {
+                Some(project) => {
+                    match app_state.input_handler.step {
+                        InputStep::Name => {
+                            project.name = app_state.input_handler.messages.get(0).cloned().unwrap_or_default();
+                            app_state.input_handler.step = InputStep::Path;
+                        },
+                        InputStep::Path => {
+                            project.path = app_state.input_handler.messages.get(1).cloned().unwrap_or_default();
+                            app_state.input_handler.step = InputStep::Version;
+                        },
+                        InputStep::Version => {
+                            project.editor_version = app_state.input_handler.messages.get(2).cloned().unwrap_or_default();
+                            app_state.input_handler.step = InputStep::Template;
+                        },
+                        InputStep::Template => {
+                            project.template = app_state.input_handler.messages.get(3).cloned().unwrap_or_default();
+                            app_state.input_handler.step = InputStep::Complete;
+                        },
+                        _ => ()
+                    }
+                },
+                _ => ()
+            }
         },
         _ => ()
     }
-
-    app_state.dialogue_state.selected_project = None;
-    app_state.dialogue_state.current_dialogue = Dialogues::NULL;
 }
 
 fn render_projects_list(frame: &mut Frame, area: Rect, list_state: &mut ListState, project_names: Vec<String>) {
@@ -201,6 +295,78 @@ pub fn refresh(app_state: &mut AppState) {
 
     app_state.dialogue_state.selected_project = None;
     app_state.dialogue_state.current_dialogue = Dialogues::NULL;
+    app_state.list_state.select_first();
+}
+
+pub fn open_proj_create_dialogue(app_state: &mut AppState,) {
+    app_state.selected_index = app_state.list_state.selected();
+    app_state.list_state.select(None);
+    app_state.dialogue_state.current_dialogue = Dialogues::INPUT;
+    app_state.dialogue_state.selected_project = Some(ProjectData::default());
+    app_state.dialogue_state.selection = DialogueSelection::OK;
+}
+
+pub fn proj_create(app_state: &mut AppState) {
+    let mut name = String::new();
+    let mut path = String::new();
+
+    // let mut editor = String::new();
+    // let mut template = String::new();
+    // let mut is_ready = true;
+
+    // match get_editors() {
+    //     Some(editors) => {
+    //         let mut i = 0;
+    //
+    //         for e in &editors {
+    //             println!("{}: {:?}", i, e);
+    //             i += 1;
+    //         }
+    //
+    //         let mut choice: String = String::new();
+    //
+    //         io::stdin()
+    //             .read_line(&mut choice)
+    //             .expect("Failed to read line");
+    //
+    //         match editors.get(choice.trim().parse::<usize>().unwrap()) {
+    //             Some(e) => editor = e.clone(),
+    //             None => ()
+    //         }
+    //     },
+    //     None => eprintln!("Fetch failed!")
+    // }
+    //
+    // match get_templates(editor.clone()) {
+    //     Some(templates) => {
+    //         let mut i = 0;
+    //
+    //         for t in &templates {
+    //             println!("{}: {:?}", i, t.display_name);
+    //             i += 1;
+    //         }
+    //
+    //         let mut choice: String = String::new();
+    //
+    //         io::stdin()
+    //             .read_line(&mut choice)
+    //             .expect("Failed to read line");
+    //
+    //         match templates.get(choice.trim().parse::<usize>().unwrap()) {
+    //             Some(t) => {
+    //                 template = t.name.clone();
+    //                 is_ready = t.status == TemplateStatus::READY;
+    //             },
+    //             None => eprintln!("Failed to get template")
+    //         }
+    //     },
+    //     None => eprintln!("Fetch failed!")
+    // }
+    
+    // match create_project(name, editor, template, path, is_ready) {
+    //     Ok((true, o)) => println!("{}", o),
+    //     _ => eprintln!("An error occured")
+    // }
 }
 
 pub fn proj_open(app_state: &mut AppState) {
@@ -233,6 +399,9 @@ pub fn open_delete_dialogue(app_state: &mut AppState, with_dir: bool) {
         },
         None => ()
     }
+
+    app_state.selected_index = app_state.list_state.selected();
+    app_state.list_state.select(None);
 }
 
 pub fn proj_delete(app_state: &mut AppState) {

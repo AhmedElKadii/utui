@@ -16,29 +16,19 @@ pub struct ProjectData {
     pub name: String,
     pub path: String,
     pub editor_version: String,
+    pub template: String,
     pub last_opened: String
 }
 
-impl ProjectData {
-    fn create_default_project() -> ProjectData {
-        return ProjectData { 
-            git_tracked: false,
-            name: String::from("DEFAULT"),
-            path: String::from("DEFAULT"),
-            editor_version: String::from("DEFAULT"),
-            last_opened: String::from("DEFAULT")
-        };
-    }
-}
+#[derive(Debug, Default, EnumString)]
+enum TemplateType { #[default] NULL, CORE, LEARNING, SAMPLE }
 
-#[derive(Debug, EnumString)]
-enum TemplateType { NULL, CORE, LEARNING, SAMPLE }
+#[derive(Debug, Default, EnumString)]
+enum RenderPipeline { #[default] NULL, HDRP, URP, BUILT_IN }
 
-#[derive(Debug, EnumString)]
-enum RenderPipeline { NULL, HDRP, URP, BUILT_IN }
-
-#[derive(Debug, EnumString)]
+#[derive(Debug, Default, EnumString)]
 enum BuildPlatform {
+    #[default]
     NULL,
     IOS,
     ANDROID,
@@ -49,10 +39,10 @@ enum BuildPlatform {
     TVOS
 }
 
-#[derive(Debug, EnumString, PartialEq, Eq)]
-pub enum TemplateStatus { NULL, DOWNLOADABLE, UPGRADABLE, READY }
+#[derive(Debug, Default, EnumString, PartialEq, Eq)]
+pub enum TemplateStatus { #[default] NULL, DOWNLOADABLE, UPGRADABLE, READY }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct TemplateData {
     pub name: String,
     pub display_name: String,
@@ -62,21 +52,6 @@ pub struct TemplateData {
     pub render_pipeline: RenderPipeline,
     pub build_platforms: Vec<BuildPlatform>,
     pub status: TemplateStatus
-}
-
-impl TemplateData {
-    fn create_default_template() -> TemplateData {
-        return TemplateData {
-            name: String::from("DEFAULT"),
-            display_name: String::from("DEFAULT"),
-            description: String::from("DEFAULT"),
-            template_type: TemplateType::NULL,
-            preview_image: String::from("DEFAULT"),
-            render_pipeline: RenderPipeline::NULL,
-            build_platforms: Vec::new(),
-            status: TemplateStatus::NULL
-        }
-    }
 }
 
 fn load_json(json_str: &str) -> Result<Value, Box<dyn Error>> {
@@ -99,7 +74,7 @@ fn is_tracked(path: &str) -> bool {
 }
 
 pub fn get_project(json_value: Option<Value>, index: usize) -> Option<ProjectData> {
-    let mut project: ProjectData = ProjectData::create_default_project();
+    let mut project: ProjectData = ProjectData::default();
 
     let loaded_value = {
         match json_value {
@@ -417,7 +392,7 @@ pub fn get_editors() -> Option<Vec<String>> {
 }
 
 pub fn get_template(json_value: Option<Value>, editor_version: Option<String>, index: usize) -> Option<TemplateData> {
-    let mut template: TemplateData = TemplateData::create_default_template();
+    let mut template: TemplateData = TemplateData::default();
     let mut editor_arg = String::from("");
 
     match editor_version {
@@ -583,21 +558,17 @@ pub fn get_templates(editor_version: String) -> Option<Vec<TemplateData>> {
 }
 
 // TODO: implement
-pub fn create_project(project_name: String, editor_version: String, template_name: String, path: String, is_ready: bool) -> Result<(bool, String), String> {
+pub fn create_project(project: &ProjectData) -> Result<(bool, String), String> {
     let mut editor_arg = String::from("--editor-version=");
-    editor_arg.push_str(&editor_version);
+    editor_arg.push_str(&project.editor_version);
     let mut template_arg = String::from("--template=");
-    template_arg.push_str(&template_name);
+    template_arg.push_str(&project.template);
     let mut path_arg = String::from("--path=");
-    path_arg.push_str(&path);
-
-    if !is_ready {
-        println!("Download available, please hold...");
-    }
+    path_arg.push_str(&project.path);
 
     match commander::run_command(String::from("which"), vec!["unity"]) {
         Ok((true, o)) =>  {
-            match commander::run_command(String::from(o), vec!["p", "create", &project_name, &editor_arg, &template_arg, &path_arg, "--json"]) {
+            match commander::run_command(String::from(o), vec!["p", "create", &project.name, &editor_arg, &template_arg, &path_arg, "--json"]) {
                 Ok((true, o)) => {
                     println!("Project created successfully");
                     return Ok((true, o));
