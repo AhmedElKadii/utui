@@ -28,6 +28,7 @@ enum Dialogues {
 
 #[derive(Default, PartialEq)]
 enum DialogueSelection {
+    NULL,
     #[default]
     OK,
     CANCEL
@@ -96,7 +97,10 @@ fn main() -> color_eyre::Result<()> {
                             KeyCode::Backspace => app_state.input_handler.delete_char(),
                             KeyCode::Left => app_state.input_handler.move_cursor_left(),
                             KeyCode::Right => app_state.input_handler.move_cursor_right(),
-                            KeyCode::Esc => execute_selection(&mut app_state),
+                            KeyCode::Esc => {
+                                app_state.dialogue_state.selection = DialogueSelection::CANCEL;
+                                execute_selection(&mut app_state);
+                            },
                             _ => {}
                         }
                     },

@@ -185,29 +185,34 @@ pub fn execute_selection(app_state: &mut AppState) {
         Dialogues::DELETE_CONFIRM(with_dir) => {
             match app_state.dialogue_state.selection {
                 DialogueSelection::OK => proj_delete(app_state),
-                DialogueSelection::CANCEL => ()
+                _ => (),
             }
             reset_state(app_state);
         },
+        // TODO: PRESSING ESC COUNTS!!
         Dialogues::INPUT => {
-            app_state.input_handler.submit_message();
+            if app_state.dialogue_state.selection == DialogueSelection::CANCEL { 
+                reset_state(app_state); 
+                return;
+            }
+
             match &mut app_state.dialogue_state.selected_project {
                 Some(project) => {
                     match app_state.input_handler.step {
                         InputStep::Name => {
-                            project.name = app_state.input_handler.messages.get(0).cloned().unwrap_or_default();
+                            project.name = app_state.input_handler.input.clone();
                             app_state.input_handler.step = InputStep::Path;
                         },
                         InputStep::Path => {
-                            project.path = app_state.input_handler.messages.get(1).cloned().unwrap_or_default();
+                            project.path = app_state.input_handler.input.clone();
                             app_state.input_handler.step = InputStep::Version;
                         },
                         InputStep::Version => {
-                            project.editor_version = app_state.input_handler.messages.get(2).cloned().unwrap_or_default();
+                            project.editor_version = app_state.input_handler.input.clone();
                             app_state.input_handler.step = InputStep::Template;
                         },
                         InputStep::Template => {
-                            project.template = app_state.input_handler.messages.get(3).cloned().unwrap_or_default();
+                            project.template = app_state.input_handler.input.clone();
                             app_state.input_handler.step = InputStep::Complete;
                         },
                         _ => ()
@@ -215,6 +220,7 @@ pub fn execute_selection(app_state: &mut AppState) {
                 },
                 _ => ()
             }
+            app_state.input_handler.submit_message();
         },
         _ => ()
     }

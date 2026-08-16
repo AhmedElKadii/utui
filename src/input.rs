@@ -14,13 +14,13 @@ pub enum InputStep {
     Version,
     Template,
     Complete,
+    Canceled
 }
 
 #[derive(Default)]
 pub struct InputHandler {
     pub input: String,
     pub character_index: usize,
-    pub messages: Vec<String>,
     pub step: InputStep
 }
 
@@ -28,7 +28,6 @@ impl InputHandler {
     pub const fn new() -> Self {
         Self {
             input: String::new(),
-            messages: Vec::new(),
             character_index: 0,
             step: InputStep::Name
         }
@@ -82,7 +81,6 @@ impl InputHandler {
     }
 
     pub fn submit_message(&mut self) {
-        self.messages.push(self.input.clone());
         self.input.clear();
         self.reset_cursor();
     }
