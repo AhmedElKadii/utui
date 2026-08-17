@@ -41,6 +41,10 @@ struct DialogueState {
     selected_project: Option<ProjectData>
 }
 
+// TODO: use these inside of some APP instance to clean stuff up a bit
+// struct AppState
+// struct AppData
+
 #[derive(Default)]
 struct AppState {
     list_state: ListState,
@@ -48,7 +52,10 @@ struct AppState {
     input_handler: InputHandler,
     dialogue_state: DialogueState,
     list_items: Vec<String>,
-    project_data: Vec<ProjectData>
+    project_data: Vec<ProjectData>,
+    editor_versions: Option<Vec<String>>,
+    templates: Option<Vec<TemplateData>>,
+    list_line_offset: usize,
 }
 
 fn main() -> color_eyre::Result<()> {
@@ -93,10 +100,16 @@ fn main() -> color_eyre::Result<()> {
                     Dialogues::INPUT => {
                         match key.code {
                             KeyCode::Enter => execute_selection(&mut app_state),
-                            KeyCode::Char(to_insert) => app_state.input_handler.enter_char(to_insert),
+                            KeyCode::Char(to_insert) if !key.modifiers.contains(KeyModifiers::CONTROL) => app_state.input_handler.enter_char(to_insert),
                             KeyCode::Backspace => app_state.input_handler.delete_char(),
                             KeyCode::Left => app_state.input_handler.move_cursor_left(),
                             KeyCode::Right => app_state.input_handler.move_cursor_right(),
+                            KeyCode::Char('n') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                change_list(&mut app_state, true);
+                            },
+                            KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                change_list(&mut app_state, false);
+                            },
                             KeyCode::Esc => {
                                 app_state.dialogue_state.selection = DialogueSelection::CANCEL;
                                 execute_selection(&mut app_state);

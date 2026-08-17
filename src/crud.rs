@@ -1,5 +1,6 @@
 use std::error::Error;
 use serde_json::Value;
+use strum::Display;
 use strum_macros::EnumString;
 use std::str::FromStr;
 use std::io;
@@ -20,13 +21,13 @@ pub struct ProjectData {
     pub last_opened: String
 }
 
-#[derive(Debug, Default, EnumString)]
+#[derive(Debug, Clone, Default, EnumString)]
 enum TemplateType { #[default] NULL, CORE, LEARNING, SAMPLE }
 
-#[derive(Debug, Default, EnumString)]
+#[derive(Debug, Clone, Default, EnumString)]
 enum RenderPipeline { #[default] NULL, HDRP, URP, BUILT_IN }
 
-#[derive(Debug, Default, EnumString)]
+#[derive(Debug, Clone, Default, EnumString)]
 enum BuildPlatform {
     #[default]
     NULL,
@@ -39,10 +40,10 @@ enum BuildPlatform {
     TVOS
 }
 
-#[derive(Debug, Default, EnumString, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, EnumString, Display)]
 pub enum TemplateStatus { #[default] NULL, DOWNLOADABLE, UPGRADABLE, READY }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct TemplateData {
     pub name: String,
     pub display_name: String,
