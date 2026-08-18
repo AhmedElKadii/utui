@@ -124,18 +124,32 @@ impl InputHandler {
             Style::default(),
         );
 
+        let input_inner_width = chunks[1].width.saturating_sub(2) as usize;
+        
+        let input_scroll_offset = if self.character_index >= input_inner_width {
+            self.character_index - input_inner_width + 1
+        } else {
+            0
+        };
+
         let input = Paragraph::new(self.input.as_str())
             .style(Style::default().fg(Color::Yellow))
-            .block(Block::bordered().title(title_message));
+            .block(Block::bordered().title(title_message))
+            .scroll((0, input_scroll_offset as u16));
         frame.render_widget(input, chunks[1]);
 
         let text = Text::from(Line::from(msg).alignment(Alignment::Right)).patch_style(style);
         let help_message = Paragraph::new(text);
         frame.render_widget(help_message, chunks[0]);
 
+        let _ = crossterm::queue!(
+            std::io::stdout(),
+            crossterm::cursor::SetCursorStyle::BlinkingBlock
+        );
+
         #[expect(clippy::cast_possible_truncation)]
         frame.set_cursor_position(Position::new(
-                chunks[1].x + self.character_index as u16 + 1,
+                chunks[1].x + (self.character_index - input_scroll_offset) as u16 + 1,
                 chunks[1].y + 1,
         ));
 
