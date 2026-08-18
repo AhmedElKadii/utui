@@ -13,7 +13,7 @@ mod crud;
 use crate::crud::*;
 mod error_handler;
 mod ui;
-use crate::input::InputHandler;
+use crate::input::{InputHandler, InputStep};
 use crate::ui::*;
 mod input;
 
@@ -100,6 +100,7 @@ fn main() -> color_eyre::Result<()> {
                     Dialogues::INPUT => {
                         match key.code {
                             KeyCode::Enter => execute_selection(&mut app_state),
+                            KeyCode::Tab if app_state.input_handler.step == InputStep::Path => append_list_item(&mut app_state),
                             KeyCode::Char(to_insert) if !key.modifiers.contains(KeyModifiers::CONTROL) => app_state.input_handler.enter_char(to_insert),
                             KeyCode::Backspace => app_state.input_handler.delete_char(),
                             KeyCode::Left => app_state.input_handler.move_cursor_left(),

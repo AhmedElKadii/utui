@@ -6,6 +6,8 @@ use ratatui::style::{Color, Modifier, Style, Stylize};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear, Fill, List, ListDirection, ListItem, ListState, Padding, Paragraph, Widget, Wrap};
 use rust_fuzzy_search::{fuzzy_search_sorted, fuzzy_search_threshold};
+use std::fs;
+use std::path::Path;
 
 use crate::Dialogues::DELETE_CONFIRM;
 use crate::{AppState, Dialogues, DialogueSelection};
@@ -50,17 +52,31 @@ pub fn render(frame: &mut Frame, app_state: &mut AppState) {
                     app_state.input_handler.render_input_box(frame, "Project Name", None);
                 },
                 InputStep::Path => {
-                    app_state.input_handler.render_input_box(frame, "Project Path", None);
+                    if app_state.input_handler.input.is_empty() { 
+                        app_state.input_handler.input = "/".to_string(); 
+                        app_state.input_handler.character_index = 1;
+                    }
+
+                    if app_state.input_handler.input.ends_with('/') {
+                        app_state.list_items = get_dir_contents(&app_state.input_handler.input);
+                        app_state.list_items.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+                    }
+                    else {
+                        app_state.list_items = if let Some((_, text)) = app_state.input_handler.input.rsplit_once('/') { fuzzy_filter_sorted(&text, app_state.list_items.clone()) } else { app_state.list_items.clone() };
+                    }
+
+                    if app_state.list_state.selected() == None && app_state.list_items.len() == 1 { app_state.list_state.select_first(); }
+
+                    app_state.input_handler.render_input_box(frame, "Project Path", Some((&mut app_state.list_state, app_state.list_items.clone())));
                 },
                 InputStep::Version => {
-                    let mut list_items: Vec<String> = Vec::new();
                     match app_state.editor_versions.clone() {
-                        Some(versions) => list_items = versions,
+                        Some(versions) => app_state.list_items = versions,
                         None => {
                             app_state.editor_versions = get_editors();
                             match app_state.editor_versions.clone() {
                                 Some(versions) => {
-                                    list_items = versions;
+                                    app_state.list_items = versions;
                                 },
                                 // no installed versions popup
                                 None => ()
@@ -68,8 +84,9 @@ pub fn render(frame: &mut Frame, app_state: &mut AppState) {
                         }
                     }
                     
-                    let sorted_words: Vec<String> = fuzzy_filter_sorted(&app_state.input_handler.input, list_items);
-                    app_state.input_handler.render_input_box(frame, "Editor Version", Some((&mut app_state.list_state, sorted_words)));
+                    app_state.list_items = fuzzy_filter_sorted(&app_state.input_handler.input, app_state.list_items.clone());
+
+                    app_state.input_handler.render_input_box(frame, "Editor Version", Some((&mut app_state.list_state, app_state.list_items.clone())));
                 },
                 InputStep::Template => {
                     let mut fetched_templates = Vec::new();
@@ -95,9 +112,9 @@ pub fn render(frame: &mut Frame, app_state: &mut AppState) {
                         .iter()
                         .map(|t| {
                             let mut text = t.display_name.clone();
-                            text.push_str(" (");
+                            text.push_str(" [");
                             text.push_str(&t.status.clone().to_string());
-                            text.push(')');
+                            text.push(']');
                             text.push('\n');
                             text.push_str(&t.description.clone());
                             text
@@ -105,6 +122,7 @@ pub fn render(frame: &mut Frame, app_state: &mut AppState) {
                         .collect();
 
                     let sorted_words: Vec<String> = fuzzy_filter_sorted(&app_state.input_handler.input, list_items);
+
                     app_state.input_handler.render_input_box(frame, "Project Template", Some((&mut app_state.list_state, sorted_words)));
                 },
                 InputStep::Complete => {
@@ -151,6 +169,19 @@ fn fuzzy_filter_sorted(query: &str, list_items: Vec<String>) -> Vec<String> {
     results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
 
     results.into_iter().map(|(word, _score)| word.to_string()).collect()
+}
+
+fn get_dir_contents(mut dir_path: &str) -> Vec<String> {
+    let mut names = Vec::new();
+
+    if let Ok(entries) = fs::read_dir(dir_path) {
+        for entry in entries.flatten() {
+            if let Ok(name) = entry.file_name().into_string() {
+                names.push(name);
+            }
+        }
+    }
+    names
 }
 
 fn popup_dialogue(
@@ -240,6 +271,23 @@ fn reset_state(app_state: &mut AppState) {
     app_state.input_handler.step = InputStep::Name;
 }
 
+pub fn append_list_item(app_state: &mut AppState) {
+    if app_state.list_state.selected() == None {
+        app_state.list_state.select_first();
+    }
+
+    if let (items, Some(index)) = (&app_state.list_items, app_state.list_state.selected()) {
+        if let Some(value) = items.get(index) {
+            app_state.input_handler.input = app_state.input_handler.input[..=app_state.input_handler.input.rfind('/').unwrap_or(0)].to_string();
+            app_state.input_handler.input.push_str(&value.clone());
+            app_state.input_handler.input.push('/');
+            app_state.input_handler.character_index = app_state.input_handler.input.len();
+            app_state.list_state.select(None);
+            app_state.list_items.clear();
+        }
+    }
+}
+
 pub fn execute_selection(app_state: &mut AppState) {
     match app_state.dialogue_state.current_dialogue {
         Dialogues::DELETE_CONFIRM(with_dir) => {
@@ -253,8 +301,11 @@ pub fn execute_selection(app_state: &mut AppState) {
             if app_state.dialogue_state.selection == DialogueSelection::CANCEL { 
                 reset_state(app_state); 
                 app_state.input_handler.submit_message();
+                refresh(app_state);
                 return;
             }
+
+            if app_state.input_handler.input.is_empty() { return; }
 
             match &mut app_state.dialogue_state.selected_project {
                 Some(project) => {
@@ -268,15 +319,18 @@ pub fn execute_selection(app_state: &mut AppState) {
                             app_state.input_handler.step = InputStep::Version;
                         },
                         InputStep::Version => {
+                            if !app_state.list_items.contains(&app_state.input_handler.input) { return; }
                             project.editor_version = app_state.input_handler.input.clone();
                             app_state.input_handler.step = InputStep::Template;
                         },
                         InputStep::Template => {
                             if let (Some(templates), Some(index)) = (&app_state.templates, app_state.list_state.selected()) {
+
                                 let str_templates: Vec<String> = templates.iter().map(|t| t.name.clone()).collect();
                                 if let Some(value) = str_templates.get(index) {
                                     app_state.input_handler.input = value.clone();
                                     app_state.input_handler.character_index = app_state.input_handler.input.len();
+                                    if !str_templates.contains(&app_state.input_handler.input) { return; }
                                 }
                             }
                             project.template = app_state.input_handler.input.clone();
