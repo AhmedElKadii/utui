@@ -1,5 +1,6 @@
 #![allow(warnings)]
 use std::io;
+use arboard::Clipboard;
 use color_eyre::eyre::Result;
 use crossterm::event::{KeyEventKind};
 use crossterm::event::{ self, KeyCode, KeyModifiers };
@@ -110,6 +111,12 @@ fn main() -> color_eyre::Result<()> {
                             },
                             KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                                 change_list(&mut app_state, false);
+                            },
+                            KeyCode::Char('v') if (key.modifiers.contains(KeyModifiers::CONTROL) ||
+                                 key.modifiers.contains(KeyModifiers::META)) => {
+                                let mut clipboard = Clipboard::new().unwrap();
+                                app_state.input_handler.input = clipboard.get_text().unwrap();
+                                app_state.input_handler.character_index = app_state.input_handler.input.len();
                             },
                             KeyCode::Esc => {
                                 app_state.dialogue_state.selection = DialogueSelection::CANCEL;

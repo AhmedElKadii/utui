@@ -16,5 +16,6 @@ strum_macros = "0.28.0"
 rust-fuzzy-search = "0.1.1"
 textwrap = "0.16.2"
 unicode-width = "0.1"
+arboard = "3.6.1"
 
 # TODO: add thiserror or anyhow and work on better error handling, also parallelize shi!
