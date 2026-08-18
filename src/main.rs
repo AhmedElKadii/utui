@@ -1,8 +1,8 @@
 #![allow(warnings)]
 use std::io;
 use color_eyre::eyre::Result;
-use crossterm::event;
-use crossterm::event::{ KeyCode, KeyModifiers };
+use crossterm::event::{KeyEventKind};
+use crossterm::event::{ self, KeyCode, KeyModifiers };
 use ratatui::widgets::ListState;
 
 // mod config;
@@ -13,159 +13,128 @@ mod crud;
 use crate::crud::*;
 mod error_handler;
 mod ui;
+use crate::input::{InputHandler, InputStep};
 use crate::ui::*;
+mod input;
+
+#[derive(Default, PartialEq)]
+enum Dialogues {
+    #[default]
+    NULL,
+    DELETE_CONFIRM(bool),
+    INPUT,
+    ERROR(String)
+}
+
+#[derive(Default, PartialEq)]
+enum DialogueSelection {
+    NULL,
+    #[default]
+    OK,
+    CANCEL
+}
+
+#[derive(Default)]
+struct DialogueState {
+    current_dialogue: Dialogues,
+    selection: DialogueSelection,
+    selected_project: Option<ProjectData>
+}
+
+// TODO: use these inside of some APP instance to clean stuff up a bit
+// struct AppState
+// struct AppData
+
+#[derive(Default)]
+struct AppState {
+    list_state: ListState,
+    selected_index: Option<usize>,
+    input_handler: InputHandler,
+    dialogue_state: DialogueState,
+    list_items: Vec<String>,
+    project_data: Vec<ProjectData>,
+    editor_versions: Option<Vec<String>>,
+    templates: Option<Vec<TemplateData>>,
+    list_line_offset: usize,
+}
 
 fn main() -> color_eyre::Result<()> {
     color_eyre::install()?;
 
-    let mut project_names: Vec<String> = Vec::new();
-    let mut project_datas: Vec<ProjectData> = Vec::new();
+    let mut app_state = AppState::default();
+    app_state.list_state = ListState::default().with_selected(Some(0));
+    app_state.input_handler = InputHandler::new();
 
-    refresh(&mut project_names, &mut project_datas);
+    refresh(&mut app_state);
 
-    let mut list_state = ListState::default().with_selected(Some(0));
     ratatui::run(|terminal| {
         loop {
-            terminal.draw(|frame| render(frame, &mut list_state, project_names.clone()))?;
+            terminal.draw(|frame| render(frame, &mut app_state))?;
             if let Some(key) = event::read()?.as_key_press_event() {
-                match key.code {
-                    KeyCode::Char('j') | KeyCode::Down => {
-                        collapse_project(list_state.selected(), &mut project_names);
-                        change_list(&mut list_state, true);
+                match app_state.dialogue_state.current_dialogue {
+                    Dialogues::NULL => {
+                        // main loop
+                        match key.code {
+                            KeyCode::Char('j') | KeyCode::Down => {
+                                change_list(&mut app_state, true);
+                            },
+                            KeyCode::Char('n') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                change_list(&mut app_state, true);
+                            },
+                            KeyCode::Char('k') | KeyCode::Up => {
+                                change_list(&mut app_state, false);
+                            },
+                            KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                change_list(&mut app_state, false);
+                            },
+                            KeyCode::Enter => expand_project(&mut app_state),
+                            KeyCode::Char('D') | KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::SHIFT) => open_delete_dialogue(&mut app_state, true),
+                            KeyCode::Char('d') => open_delete_dialogue(&mut app_state, false),
+                            KeyCode::Char('o') => proj_open(&mut app_state),
+                            KeyCode::Char('c') => open_proj_create_dialogue(&mut app_state),
+                            KeyCode::Esc => collapse_project(&mut app_state),
+                            KeyCode::Char('q') => break Ok(()),
+                            _ => ()
+                        }
                     },
-                    KeyCode::Char('n') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                        collapse_project(list_state.selected(), &mut project_names);
-                        change_list(&mut list_state, true);
+                    Dialogues::INPUT => {
+                        match key.code {
+                            KeyCode::Enter => execute_selection(&mut app_state),
+                            KeyCode::Tab if app_state.input_handler.step == InputStep::Path => append_list_item(&mut app_state),
+                            KeyCode::Char(to_insert) if !key.modifiers.contains(KeyModifiers::CONTROL) => app_state.input_handler.enter_char(to_insert),
+                            KeyCode::Backspace => app_state.input_handler.delete_char(),
+                            KeyCode::Left => app_state.input_handler.move_cursor_left(),
+                            KeyCode::Right => app_state.input_handler.move_cursor_right(),
+                            KeyCode::Char('n') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                change_list(&mut app_state, true);
+                            },
+                            KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                change_list(&mut app_state, false);
+                            },
+                            KeyCode::Esc => {
+                                app_state.dialogue_state.selection = DialogueSelection::CANCEL;
+                                execute_selection(&mut app_state);
+                            },
+                            _ => {}
+                        }
                     },
-                    KeyCode::Char('k') | KeyCode::Up => {
-                        collapse_project(list_state.selected(), &mut project_names);
-                        change_list(&mut list_state, false);
-                    },
-                    KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                        collapse_project(list_state.selected(), &mut project_names);
-                        change_list(&mut list_state, false);
-                    },
-                    KeyCode::Enter => expand_project(list_state.selected(), &mut project_names, &project_datas),
-                    KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::SHIFT) => proj_delete(&mut list_state, &mut project_names, &project_datas, true),
-                    KeyCode::Char('d') => proj_delete(&mut list_state, &mut project_names, &project_datas, false),
-                    KeyCode::Char('o') => proj_open(&mut list_state, &project_datas),
-                    KeyCode::Char('q') | KeyCode::Esc => break Ok(()),
-                    _ => ()
+                    _ => {
+                        // dialogue sub-loop
+                        match key.code {
+                            KeyCode::Char('l') | KeyCode::Right => app_state.dialogue_state.selection = DialogueSelection::CANCEL,
+                            KeyCode::Char('h') | KeyCode::Left => app_state.dialogue_state.selection = DialogueSelection::OK,
+                            KeyCode::Esc => {
+                                app_state.dialogue_state.selection = DialogueSelection::CANCEL;
+                                execute_selection(&mut app_state);
+                            },
+                            KeyCode::Enter => execute_selection(&mut app_state),
+                            KeyCode::Char('q') => break Ok(()),
+                            _ => ()
+                        }
+                    }
                 }
             }
         }
     })
 }
 
-fn list_projs() {
-    match get_projects() {
-        Some(projects) => {
-            let mut i = 0;
-
-            for p in &projects {
-                println!("{}: {:?}", i, p);
-                i += 1;
-            }
-        },
-        None => eprintln!("Fetch failed!")
-    }
-}
-
-fn delete_proj() {
-    match get_projects() {
-        Some(projects) => {
-            let mut i = 0;
-
-            for p in &projects {
-                println!("{}: {:?}", i, p);
-                i += 1;
-            }
-
-            let mut choice: String = String::new();
-
-            io::stdin()
-                .read_line(&mut choice)
-                .expect("Failed to read line");
-
-            match projects.get(choice.trim().parse::<usize>().unwrap()) {
-                Some(p) => delete_project(p, true),
-                None => ()
-            }
-        },
-        None => eprintln!("Fetch failed!")
-    }
-}
-
-fn create_proj() {
-    let mut name = String::new();
-    let mut path = String::new();
-    let mut editor = String::new();
-    let mut template = String::new();
-    let mut is_ready = true;
-
-    println!("Name: ");
-
-    io::stdin()
-        .read_line(&mut name)
-        .expect("null");
-
-    println!("Path: ");
-
-    io::stdin()
-        .read_line(&mut path)
-        .expect("null");
-
-    match get_editors() {
-        Some(editors) => {
-            let mut i = 0;
-
-            for e in &editors {
-                println!("{}: {:?}", i, e);
-                i += 1;
-            }
-
-            let mut choice: String = String::new();
-
-            io::stdin()
-                .read_line(&mut choice)
-                .expect("Failed to read line");
-
-            match editors.get(choice.trim().parse::<usize>().unwrap()) {
-                Some(e) => editor = e.clone(),
-                None => ()
-            }
-        },
-        None => eprintln!("Fetch failed!")
-    }
-
-    match get_templates(editor.clone()) {
-        Some(templates) => {
-            let mut i = 0;
-
-            for t in &templates {
-                println!("{}: {:?}", i, t.display_name);
-                i += 1;
-            }
-
-            let mut choice: String = String::new();
-
-            io::stdin()
-                .read_line(&mut choice)
-                .expect("Failed to read line");
-
-            match templates.get(choice.trim().parse::<usize>().unwrap()) {
-                Some(t) => {
-                    template = t.name.clone();
-                    is_ready = t.status == TemplateStatus::READY;
-                },
-                None => eprintln!("Failed to get template")
-            }
-        },
-        None => eprintln!("Fetch failed!")
-    }
-    
-    match create_project(name, editor, template, path, is_ready) {
-        Ok((true, o)) => println!("{}", o),
-        _ => eprintln!("An error occured")
-    }
-}
