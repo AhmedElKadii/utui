@@ -1,18 +1,4 @@
-use crossterm::event::{self, KeyCode};
-use ratatui::Frame;
-use ratatui::buffer::Buffer;
-use ratatui::layout::{Alignment, Constraint, Direction, Flex, Layout, Rect};
-use ratatui::style::{Color, Modifier, Style, Stylize};
-use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Clear, Fill, List, ListDirection, ListItem, ListState, Padding, Paragraph, Widget, Wrap};
-use rust_fuzzy_search::{fuzzy_search_sorted, fuzzy_search_threshold};
-use std::fs;
-use std::path::Path;
-
-use crate::Dialogues::DELETE_CONFIRM;
-use crate::{AppState, Dialogues, DialogueSelection};
-use crate::crud::{self, ProjectData, create_project, delete_project, get_editors, get_projects, get_template, get_templates, open_project};
-use crate::input::{self, InputStep};
+use crate::prelude::*;
 
 pub fn render(frame: &mut Frame, app_state: &mut AppState) {
     let constraints = [

@@ -1,38 +1,20 @@
 #![allow(warnings)]
-use std::io;
-use arboard::Clipboard;
-use color_eyre::eyre::Result;
-use crossterm::event::{KeyEventKind};
-use crossterm::event::{ self, KeyCode, KeyModifiers };
-use ratatui::widgets::ListState;
-
-// mod config;
-// use crate::config::*;
-mod commander;
-use crate::commander::*;
-mod crud;
-use crate::crud::*;
-mod error_handler;
-mod ui;
-use crate::input::{InputHandler, InputStep};
-use crate::ui::*;
-mod input;
 
 #[derive(Default, PartialEq)]
 enum Dialogues {
     #[default]
-    NULL,
-    DELETE_CONFIRM(bool),
-    INPUT,
-    ERROR(String)
+    Null,
+    DeleteConfirm(bool),
+    Input,
+    Error(String)
 }
 
 #[derive(Default, PartialEq)]
 enum DialogueSelection {
-    NULL,
+    Null,
     #[default]
-    OK,
-    CANCEL
+    Ok,
+    Cancel
 }
 
 #[derive(Default)]
@@ -41,10 +23,6 @@ struct DialogueState {
     selection: DialogueSelection,
     selected_project: Option<ProjectData>
 }
-
-// TODO: use these inside of some APP instance to clean stuff up a bit
-// struct AppState
-// struct AppData
 
 #[derive(Default)]
 struct AppState {

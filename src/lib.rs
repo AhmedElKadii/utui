@@ -1,15 +1,12 @@
-use std::error::Error;
-use serde_json::Value;
-use strum::Display;
-use strum_macros::EnumString;
-use std::str::FromStr;
-use std::io;
+#![allow(warnings)]
+pub mod commander;
+pub mod error_handler;
+pub mod prelude;
+pub mod input;
+pub mod ui;
+pub mod config;
 
-use crate::commander;
-use crate::error_handler;
-use chrono::prelude::*;
-
-//TODO: this file needs heavy cleanup and optimization.
+use crate::prelude::*;
 
 #[derive(Debug, Default, Clone)]
 pub struct ProjectData {
@@ -22,26 +19,26 @@ pub struct ProjectData {
 }
 
 #[derive(Debug, Clone, Default, EnumString)]
-enum TemplateType { #[default] NULL, CORE, LEARNING, SAMPLE }
+pub enum TemplateType { #[default] Null, Core, Learning, Sample }
 
 #[derive(Debug, Clone, Default, EnumString)]
-enum RenderPipeline { #[default] NULL, HDRP, URP, BUILT_IN }
+pub enum RenderPipeline { #[default] Null, HDRP, URP, BuiltIn }
 
 #[derive(Debug, Clone, Default, EnumString)]
-enum BuildPlatform {
+pub enum BuildPlatform {
     #[default]
-    NULL,
+    Null,
     IOS,
-    ANDROID,
-    LINUX,
-    MACOS,
-    WEBGL,
-    WINDOWS,
+    Android,
+    Linux,
+    MacOS,
+    WebGL,
+    Windows,
     TVOS
 }
 
 #[derive(Debug, Clone, Default, EnumString, Display)]
-pub enum TemplateStatus { #[default] NULL, DOWNLOADABLE, UPGRADABLE, READY }
+pub enum TemplateStatus { #[default] Null, Downloadable, Upgradable, Ready }
 
 #[derive(Debug, Clone, Default)]
 pub struct TemplateData {
@@ -64,7 +61,7 @@ fn load_json(json_str: &str) -> Result<Value, Box<dyn Error>> {
 }
 
 fn is_tracked(path: &str) -> bool {
-    match commander::run_command(String::from("ls"), vec!["-a", path]) {
+    match run_command(String::from("ls"), vec!["-a", path]) {
         Ok((true, o)) => {
             return o.contains(".git");
         },
@@ -78,39 +75,38 @@ pub fn get_project(json_value: Option<Value>, index: usize) -> Option<ProjectDat
     let mut project: ProjectData = ProjectData::default();
 
     let loaded_value = {
-        match json_value {
-            Some(val) => val,
-            None => {
-                match commander::run_command(String::from("which"), vec!["unity"]) {
-                    Ok((true, unity_path)) =>  {
-                        match commander::run_command(String::from(unity_path), vec!["p", "list", "--json"]) {
-                            Ok((true, o)) => {
-                                match load_json(&o) {
-                                    Ok(val) => val,
-                                    Err(e) => {
-                                        eprintln!("Failed to load json");
-                                        return None;
-                                    }
+        if let Some(val) = json_value {
+            val
+        } else {
+            match run_command(String::from("which"), vec!["unity"]) {
+                Ok((true, unity_path)) =>  {
+                    match run_command(String::from(unity_path), vec!["p", "list", "--json"]) {
+                        Ok((true, o)) => {
+                            match load_json(&o) {
+                                Ok(val) => val,
+                                Err(e) => {
+                                    eprintln!("Failed to load json");
+                                    return None;
                                 }
-                            },
-                            Ok((false, e)) => {
-                                eprintln!("{}", e);
-                                return None;
-                            },
-                            Err(e) => {
-                                eprintln!("{}", e);
-                                return None;
                             }
+                        },
+                        Ok((false, e)) => {
+                            eprintln!("{}", e);
+                            return None;
+                        },
+                        Err(e) => {
+                            eprintln!("{}", e);
+                            return None;
                         }
-                    },
-                    Ok((false, e)) => {
-                        eprintln!("{}", e);
-                        return None;
-                    },
-                    Err(e) => {
-                        eprintln!("{}", e);
-                        return None;
                     }
+                },
+                Ok((false, e)) => {
+                    eprintln!("{}", e);
+                    return None;
+                },
+                Err(e) => {
+                    eprintln!("{}", e);
+                    return None;
                 }
             }
         }
@@ -127,7 +123,7 @@ pub fn get_project(json_value: Option<Value>, index: usize) -> Option<ProjectDat
                 match data[index].get("path").and_then(|v| v.as_str()) {
                     Some(path) => project.path = String::from(path), _ => (),
                 }
-                match commander::run_command(String::from("ls"), vec!["-a", &project.path]) {
+                match run_command(String::from("ls"), vec!["-a", &project.path]) {
                     Ok((true, o)) => (),
                     _ => return None,
                 }
@@ -186,9 +182,9 @@ pub fn get_project(json_value: Option<Value>, index: usize) -> Option<ProjectDat
 pub fn get_projects() -> Option<Vec<ProjectData>> {
     let mut projects: Vec<ProjectData> = Vec::new();
 
-    match commander::run_command(String::from("which"), vec!["unity"]) {
+    match run_command(String::from("which"), vec!["unity"]) {
         Ok((true, unity_path)) =>  {
-            match commander::run_command(String::from(unity_path), vec!["p", "list", "--json"]) {
+            match run_command(String::from(unity_path), vec!["p", "list", "--json"]) {
                 Ok((true, o)) => {
                     match load_json(&o) {
                         Ok(json_value) => {
@@ -238,9 +234,9 @@ pub fn get_projects() -> Option<Vec<ProjectData>> {
 }
 
 pub fn open_project(project: &ProjectData) {
-    match commander::run_command(String::from("which"), vec!["unity"]) {
+    match run_command(String::from("which"), vec!["unity"]) {
         Ok((true, unity_path)) =>  {
-            match commander::run_command(String::from(unity_path), vec!["p", "open", &project.path]) {
+            match run_command(String::from(unity_path), vec!["p", "open", &project.path]) {
                 Ok((true, o)) =>  {
                     match get_response(o) {
                         Ok((true, o)) => {
@@ -269,14 +265,14 @@ pub fn open_project(project: &ProjectData) {
 }
 
 pub fn delete_project(project: &ProjectData, remove_files: bool) {
-    match commander::run_command(String::from("which"), vec!["unity"]) {
+    match run_command(String::from("which"), vec!["unity"]) {
         Ok((true, unity_path)) =>  {
-            match commander::run_command(String::from(unity_path), vec!["p", "remove", "-f", "--json", &project.path]) {
+            match run_command(String::from(unity_path), vec!["p", "remove", "-f", "--json", &project.path]) {
                 Ok((true, o)) =>  {
                     match get_response(o) {
                         Ok((true, o)) => {
                             if remove_files {
-                                match commander::run_command(String::from("rm"), vec!["-r", "-f", &project.path]) {
+                                match run_command(String::from("rm"), vec!["-r", "-f", &project.path]) {
                                     Ok((true, o)) =>  {
                                         println!("project deleted successfully");
                                     },
@@ -346,9 +342,9 @@ pub fn get_response(message: String) -> Result<(bool, String), String> {
 pub fn get_editors() -> Option<Vec<String>> {
     let mut editors: Vec<String> = Vec::new();
 
-    match commander::run_command(String::from("which"), vec!["unity"]) {
+    match run_command(String::from("which"), vec!["unity"]) {
         Ok((true, unity_path)) =>  {
-            match commander::run_command(String::from(unity_path), vec!["editors", "list", "--installed", "--json"]) {
+            match run_command(String::from(unity_path), vec!["editors", "list", "--installed", "--json"]) {
                 Ok((true, o)) => {
                     match load_json(&o) {
                         Ok(json_value) => {
@@ -409,9 +405,9 @@ pub fn get_template(json_value: Option<Value>, editor_version: Option<String>, i
         match json_value {
             Some(val) => val,
             None => {
-                match commander::run_command(String::from("which"), vec!["unity"]) {
+                match run_command(String::from("which"), vec!["unity"]) {
                     Ok((true, unity_path)) =>  {
-                        match commander::run_command(String::from(unity_path), vec!["templates", "list", &editor_arg, "--json"]) {
+                        match run_command(String::from(unity_path), vec!["templates", "list", &editor_arg, "--json"]) {
                             Ok((true, o)) => {
                                 match load_json(&o) {
                                     Ok(val) => val,
@@ -507,9 +503,9 @@ pub fn get_templates(editor_version: String) -> Option<Vec<TemplateData>> {
     let mut editor_arg = String::from("--editor=");
     editor_arg.push_str(&editor_version);
 
-    match commander::run_command(String::from("which"), vec!["unity"]) {
+    match run_command(String::from("which"), vec!["unity"]) {
         Ok((true, unity_path)) =>  {
-            match commander::run_command(String::from(unity_path), vec!["templates", "list", &editor_arg, "--json"]) {
+            match run_command(String::from(unity_path), vec!["templates", "list", &editor_arg, "--json"]) {
                 Ok((true, o)) => {
                     match load_json(&o) {
                         Ok(json_value) => {
@@ -567,9 +563,9 @@ pub fn create_project(project: &ProjectData) -> Result<(bool, String), String> {
     let mut path_arg = String::from("--path=");
     path_arg.push_str(&project.path);
 
-    match commander::run_command(String::from("which"), vec!["unity"]) {
+    match run_command(String::from("which"), vec!["unity"]) {
         Ok((true, o)) =>  {
-            match commander::run_command(String::from(o), vec!["p", "create", &project.name, &editor_arg, &template_arg, &path_arg, "--json"]) {
+            match run_command(String::from(o), vec!["p", "create", &project.name, &editor_arg, &template_arg, &path_arg, "--json"]) {
                 Ok((true, o)) => {
                     println!("Project created successfully");
                     return Ok((true, o));

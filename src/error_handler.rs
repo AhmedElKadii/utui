@@ -1,5 +1,4 @@
-use std::error::Error;
-use std::fmt;
+use crate::prelude::{fmt, Error};
 
 #[derive(Debug)]
 pub struct ParseFailErr(pub String);

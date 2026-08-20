@@ -1,11 +1,4 @@
-use color_eyre::Result;
-use crossterm::event::{self, KeyCode, KeyEventKind};
-use ratatui::layout::{Alignment, Constraint, Direction, Layout, Position};
-use ratatui::style::{Color, Modifier, Style, Stylize};
-use ratatui::text::{Line, Span, Text};
-use ratatui::widgets::{Block, List, ListItem, ListState, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState};
-use ratatui::{DefaultTerminal, Frame};
-use unicode_width::UnicodeWidthStr;
+use crate::prelude::*;
 
 #[derive(Default, PartialEq)]
 pub enum InputStep {

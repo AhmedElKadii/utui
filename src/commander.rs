@@ -1,5 +1,4 @@
-use std::process::{Command, Stdio};
-use std::io;
+use crate::prelude::{Command, Stdio, io};
 
 pub fn run_command(cmd: String, args: Vec<&str>) -> io::Result<(bool, String)> {
     let output = Command::new(cmd.trim())
