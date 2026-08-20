@@ -60,14 +60,16 @@ pub fn render(frame: &mut Frame, app_state: &mut AppState) {
                     if app_state.input_handler.input.ends_with('/') {
                         app_state.list_items = get_dir_contents(&app_state.input_handler.input);
                         app_state.list_items.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+                        app_state.list_items_buffer = app_state.list_items.clone();
                     }
                     else {
-                        app_state.list_items = if let Some((_, text)) = app_state.input_handler.input.rsplit_once('/') { fuzzy_filter_sorted(&text, app_state.list_items.clone()) } else { app_state.list_items.clone() };
+                        app_state.list_items_buffer = app_state.list_items.clone();
+                        app_state.list_items_buffer = if let Some((_, text)) = app_state.input_handler.input.rsplit_once('/') { fuzzy_filter_sorted(&text, app_state.list_items.clone()) } else { app_state.list_items.clone() };
                     }
 
-                    if app_state.list_state.selected() == None && app_state.list_items.len() == 1 { app_state.list_state.select_first(); }
+                    if app_state.list_state.selected() == None && app_state.list_items_buffer.len() == 1 { app_state.list_state.select_first(); }
 
-                    app_state.input_handler.render_input_box(frame, "Project Path", Some((&mut app_state.list_state, app_state.list_items.clone())));
+                    app_state.input_handler.render_input_box(frame, "Project Path", Some((&mut app_state.list_state, app_state.list_items_buffer.clone())));
                 },
                 InputStep::Version => {
                     match app_state.editor_versions.clone() {

@@ -53,6 +53,7 @@ struct AppState {
     input_handler: InputHandler,
     dialogue_state: DialogueState,
     list_items: Vec<String>,
+    list_items_buffer: Vec<String>,
     project_data: Vec<ProjectData>,
     editor_versions: Option<Vec<String>>,
     templates: Option<Vec<TemplateData>>,
