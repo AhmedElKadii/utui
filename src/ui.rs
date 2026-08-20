@@ -278,7 +278,7 @@ pub fn append_list_item(app_state: &mut AppState) {
         app_state.list_state.select_first();
     }
 
-    if let (items, Some(index)) = (&app_state.list_items, app_state.list_state.selected()) {
+    if let (items, Some(index)) = (&app_state.list_items_buffer, app_state.list_state.selected()) {
         if let Some(value) = items.get(index) {
             app_state.input_handler.input = app_state.input_handler.input[..=app_state.input_handler.input.rfind('/').unwrap_or(0)].to_string();
             app_state.input_handler.input.push_str(&value.clone());
