@@ -5,11 +5,11 @@ use crate::error::AppError;
 use crate::project::Project;
 use crate::template::Template;
 
-pub struct UnityHub {
+pub struct UnityCLI {
     binary: String,
 }
 
-impl UnityHub {
+impl UnityCLI {
     pub fn discover() -> Result<Self, AppError> {
         match run_command("which", &["unity"]) {
             Ok((true, path)) => Ok(Self {

@@ -8,7 +8,7 @@ use crate::dialogue::{Dialogue, DialogueSelection, DialogueState};
 use crate::input::{InputHandler, InputStep};
 use crate::project::Project;
 use crate::template::Template;
-use crate::unity::UnityHub;
+use crate::unity::UnityCLI;
 
 pub struct App {
     pub list_state: ListState,
@@ -20,7 +20,7 @@ pub struct App {
     pub projects: Vec<Project>,
     pub editor_versions: Option<Vec<String>>,
     pub templates: Option<Vec<Template>>,
-    unity: Option<UnityHub>,
+    unity: Option<UnityCLI>,
 }
 
 impl App {
@@ -35,7 +35,7 @@ impl App {
             projects: Vec::new(),
             editor_versions: None,
             templates: None,
-            unity: UnityHub::discover().ok(),
+            unity: UnityCLI::discover().ok(),
         }
     }
 
