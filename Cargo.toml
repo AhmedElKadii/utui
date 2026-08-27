@@ -17,5 +17,6 @@ rust-fuzzy-search = "0.1.1"
 textwrap = "0.16.2"
 unicode-width = "0.1"
 arboard = "3.6.1"
+rayon = "1.12.0"
 
 # TODO: add thiserror or anyhow and work on better error handling, also parallelize shi!

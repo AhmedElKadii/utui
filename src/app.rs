@@ -4,12 +4,15 @@ use crossterm::event::{self, KeyCode, KeyEvent, KeyModifiers};
 use ratatui::widgets::ListState;
 use rust_fuzzy_search::fuzzy_search_threshold;
 use std::fs;
+use std::sync::Arc;
 
 use crate::dialogue::{Dialogue, DialogueSelection, DialogueState};
+use crate::error::AppError;
 use crate::input::{InputHandler, InputStep};
 use crate::project::Project;
 use crate::template::Template;
 use crate::unity::UnityCLI;
+use crate::threading::AsyncTask;
 
 pub struct App {
     pub list_state: ListState,
@@ -21,7 +24,8 @@ pub struct App {
     pub projects: Vec<Project>,
     pub editor_versions: Option<Vec<String>>,
     pub templates: Option<Vec<Template>>,
-    unity: Option<UnityCLI>,
+    pub task: Option<AsyncTask<Result<Vec<String>, AppError>>>,
+    unity: Option<Arc<UnityCLI>>
 }
 
 impl App {
@@ -36,7 +40,16 @@ impl App {
             projects: Vec::new(),
             editor_versions: None,
             templates: None,
-            unity: UnityCLI::discover().ok(),
+            task: None,
+            unity: match UnityCLI::discover() {
+                Ok(unity_instance) => {
+                    Some(Arc::new(unity_instance))
+                }
+                Err(err) => {
+                    eprintln!("Unity CLI not found: {}", err);
+                    None
+                }
+            },
         }
     }
 
@@ -141,10 +154,15 @@ impl App {
         self.projects.clear();
 
         if let Some(unity) = &self.unity {
-            if let Ok(projects) = unity.list_projects() {
-                self.list_items = projects.iter().map(|project| project.name.clone()).collect();
-                self.projects = projects;
-            }
+            let u = unity.clone();
+
+            self.task = Some(AsyncTask::new(move || {
+                let result = u.list_projects();
+
+                result.map(|projects| {
+                    projects.iter().map(|project| project.name.clone()).collect::<Vec<String>>()
+                })
+            }));
         }
 
         self.dialogue.close();
