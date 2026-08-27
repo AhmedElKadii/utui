@@ -3,7 +3,7 @@ use arboard::Clipboard;
 use crossterm::event::{self, KeyCode, KeyEvent, KeyModifiers};
 use ratatui::widgets::ListState;
 use rust_fuzzy_search::fuzzy_search_threshold;
-use std::fs;
+use std::{default, fs};
 use std::time::Duration;
 use std::sync::Arc;
 
@@ -15,6 +15,13 @@ use crate::template::Template;
 use crate::unity::UnityCLI;
 use crate::threading::AsyncTask;
 
+#[derive(Default)]
+pub struct Tasks {
+    pub projects: Option<AsyncTask<Result<(Vec<String>, Vec<Project>), AppError>>>,
+    pub editors: Option<AsyncTask<Result<(Vec<String>), AppError>>>,
+    pub templates: Option<AsyncTask<Result<(Vec<String>, Vec<Template>), AppError>>>,
+}
+
 pub struct App {
     pub list_state: ListState,
     pub selected_index: Option<usize>,
@@ -25,8 +32,8 @@ pub struct App {
     pub projects: Vec<Project>,
     pub editor_versions: Option<Vec<String>>,
     pub templates: Option<Vec<Template>>,
-    pub project_task: Option<AsyncTask<Result<(Vec<String>, Vec<Project>), AppError>>>,
     pub tick_counter: u64, 
+    pub tasks: Tasks,
     unity: Option<Arc<UnityCLI>>
 }
 
@@ -42,7 +49,7 @@ impl App {
             projects: Vec::new(),
             editor_versions: None,
             templates: None,
-            project_task: None,
+            tasks: Tasks::default(),
             tick_counter: 0,
             unity: match UnityCLI::discover() {
                 Ok(unity_instance) => {
@@ -67,9 +74,9 @@ impl App {
 
             app.tick_counter = app.tick_counter.wrapping_add(1);
 
-            if let Some(ref task) = app.project_task {
+            if let Some(ref task) = app.tasks.projects {
                 if let Some(result) = task.poll() {
-                    app.project_task = None;
+                    app.tasks.projects = None;
                     match result {
                         Ok((names, projects)) => {
                             app.list_items = names;
@@ -82,6 +89,28 @@ impl App {
                     }
                 } else if matches!(app.dialogue.current, Dialogue::Info(_)) {
                     app.update_loading(String::from("Loading projects..."));
+                }
+            }
+
+            if let Some(ref task) = app.tasks.editors {
+                if let Some(result) = task.poll() {
+                    app.tasks.editors = None;
+                    match result {
+                        Ok(editors) => {
+                            if editors.is_empty() {
+                                app.dialogue.current = Dialogue::Error("No editors available...".to_string());
+                            } else {
+                                app.editor_versions = Some(editors.clone());
+                                app.list_items = editors;
+                                app.dialogue.current = Dialogue::Input;
+                            }
+                        }
+                        Err(err) => {
+                            app.dialogue.current = Dialogue::Error(err.to_string());
+                        }
+                    }
+                } else if matches!(app.dialogue.current, Dialogue::Info(_)) {
+                    app.update_loading(String::from("Loading editor versions..."));
                 }
             }
 
@@ -196,7 +225,7 @@ impl App {
         if let Some(unity) = &self.unity {
             let uclone = unity.clone();
 
-            self.project_task = Some(AsyncTask::new(move || {
+            self.tasks.projects = Some(AsyncTask::new(move || {
                 uclone.list_projects().map(|projects| {
                     let names = projects.iter().map(|p| p.name.clone()).collect();
                     (names, projects)
@@ -222,19 +251,19 @@ impl App {
     }
 
     fn refresh_path_suggestions(&mut self) {
-        if self.input.input.is_empty() {
+        if self.input.value.is_empty() {
             self.input.set_text("/");
         }
 
-        if self.input.input.ends_with('/') {
-            self.list_items = dir_contents(&self.input.input);
+        if self.input.value.ends_with('/') {
+            self.list_items = dir_contents(&self.input.value);
             self.list_items
                 .sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
             self.list_items_buffer = self.list_items.clone();
         } else {
             let query = self
                 .input
-                .input
+                .value
                 .rsplit_once('/')
                 .map(|(_, text)| text)
                 .unwrap_or("");
@@ -248,17 +277,17 @@ impl App {
 
     fn refresh_version_suggestions(&mut self) {
         if self.editor_versions.is_none() {
-            self.editor_versions = self
-                .unity
-                .as_ref()
-                .and_then(|unity| unity.list_editors().ok());
+            if let Some(unity) = &self.unity {
+                let uclone = unity.clone();
+
+                self.dialogue.current = Dialogue::Info(String::new());
+                self.tasks.editors = Some(AsyncTask::new(move || {
+                    uclone.list_editors()
+                }));
+            }
         }
 
-        if let Some(versions) = &self.editor_versions {
-            self.list_items = versions.clone();
-        }
-
-        self.list_items = fuzzy_filter_sorted(&self.input.input, self.list_items.clone());
+        self.list_items = fuzzy_filter_sorted(&self.input.value, self.list_items.clone());
     }
 
     fn refresh_template_suggestions(&mut self) {
@@ -282,7 +311,7 @@ impl App {
             .as_ref()
             .map(|templates| templates.iter().map(Template::list_label).collect())
             .unwrap_or_default();
-        fuzzy_filter_sorted(&self.input.input, labels)
+        fuzzy_filter_sorted(&self.input.value, labels)
     }
 
     fn finish_create(&mut self) {
@@ -314,7 +343,7 @@ impl App {
                     return;
                 }
 
-                if self.input.input.is_empty() {
+                if self.input.value.is_empty() {
                     return;
                 }
 
@@ -334,7 +363,7 @@ impl App {
     fn advance_create_step(&mut self) -> bool {
         match self.input.step {
             InputStep::Name => {
-                let name = self.input.input.clone();
+                let name = self.input.value.clone();
                 if let Some(project) = self.dialogue.selected_project.as_mut() {
                     project.name = name;
                 }
@@ -342,7 +371,7 @@ impl App {
                 true
             }
             InputStep::Path => {
-                let path = self.input.input.clone();
+                let path = self.input.value.clone();
                 if let Some(project) = self.dialogue.selected_project.as_mut() {
                     project.path = path;
                 }
@@ -350,10 +379,10 @@ impl App {
                 true
             }
             InputStep::Version => {
-                if !self.list_items.contains(&self.input.input) {
+                if !self.list_items.contains(&self.input.value) {
                     return false;
                 }
-                let version = self.input.input.clone();
+                let version = self.input.value.clone();
                 if let Some(project) = self.dialogue.selected_project.as_mut() {
                     project.editor_version = version;
                 }
@@ -367,12 +396,12 @@ impl App {
                     let names: Vec<String> = templates.iter().map(|t| t.name.clone()).collect();
                     if let Some(value) = names.get(index).cloned() {
                         self.input.set_text(value);
-                        if !names.contains(&self.input.input) {
+                        if !names.contains(&self.input.value) {
                             return false;
                         }
                     }
                 }
-                let template = self.input.input.clone();
+                let template = self.input.value.clone();
                 if let Some(project) = self.dialogue.selected_project.as_mut() {
                     project.template = template;
                 }
@@ -395,8 +424,8 @@ impl App {
             return;
         };
 
-        let prefix_end = self.input.input.rfind('/').unwrap_or(0);
-        let mut path = self.input.input[..=prefix_end].to_string();
+        let prefix_end = self.input.value.rfind('/').unwrap_or(0);
+        let mut path = self.input.value[..=prefix_end].to_string();
         path.push_str(&value);
         path.push('/');
         self.input.set_text(&path);

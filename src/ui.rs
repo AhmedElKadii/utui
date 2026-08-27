@@ -65,12 +65,15 @@ pub fn render(frame: &mut Frame, app: &mut App) {
                 );
             }
             InputStep::Version => {
-                let items = app.list_items.clone();
-                app.input.render_input_box(
-                    frame,
-                    "Editor Version",
-                    Some((&mut app.list_state, items)),
-                );
+                if app.list_items.is_empty() {
+                    app.dialogue.current = Dialogue::Error("No editors available...".to_string());
+                } else {
+                    app.input.render_input_box(
+                        frame,
+                        "Editor Version",
+                        Some((&mut app.list_state, app.list_items.clone())),
+                    );
+                }
             }
             InputStep::Template => {
                 let labels = app.template_labels();
@@ -83,7 +86,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
             _ => {}
         },
         Dialogue::None => {
-            if app.project_task.is_some() {
+            if app.tasks.projects.is_some() {
                 app.dialogue.current = Dialogue::Info(String::new());
             } else if app.list_items.is_empty() {
                 let empty = Line::from_iter([
