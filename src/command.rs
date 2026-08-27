@@ -1,7 +1,7 @@
-use std::process::{Command, Stdio};
 use std::io;
+use std::process::{Command, Stdio};
 
-pub fn run_command(cmd: String, args: Vec<&str>) -> io::Result<(bool, String)> {
+pub fn run_command(cmd: &str, args: &[&str]) -> io::Result<(bool, String)> {
     let output = Command::new(cmd.trim())
         .args(args)
         .stdout(Stdio::piped())
@@ -9,15 +9,10 @@ pub fn run_command(cmd: String, args: Vec<&str>) -> io::Result<(bool, String)> {
         .output()?;
 
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
-
     if !stdout.is_empty() {
         return Ok((true, stdout));
     }
 
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
     Ok((false, stderr))
-}
-
-// TODO: use to cleanup crud.rs
-pub fn run_unity_command() {
 }
