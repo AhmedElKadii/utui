@@ -80,7 +80,13 @@ pub fn render(frame: &mut Frame, app: &mut App) {
             _ => {}
         },
         Dialogue::None => {
-            if app.list_items.is_empty() {
+            if app.project_task.is_some() {
+                let loading = Line::from_iter([
+                    Span::from(" Loading projects...").bold().yellow(),
+                    Span::from(" please wait."),
+                ]);
+                frame.render_widget(loading.left_aligned(), middle);
+            } else if app.list_items.is_empty() {
                 let empty = Line::from_iter([
                     Span::from(" No projects available...").bold(),
                     Span::from(" press c to create a project or a to add an existing one."),

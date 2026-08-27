@@ -4,6 +4,7 @@ use crossterm::event::{self, KeyCode, KeyEvent, KeyModifiers};
 use ratatui::widgets::ListState;
 use rust_fuzzy_search::fuzzy_search_threshold;
 use std::fs;
+use std::time::Duration;
 use std::sync::Arc;
 
 use crate::dialogue::{Dialogue, DialogueSelection, DialogueState};
@@ -24,7 +25,7 @@ pub struct App {
     pub projects: Vec<Project>,
     pub editor_versions: Option<Vec<String>>,
     pub templates: Option<Vec<Template>>,
-    pub task: Option<AsyncTask<Result<Vec<String>, AppError>>>,
+    pub project_task: Option<AsyncTask<Result<(Vec<String>, Vec<Project>), AppError>>>,
     unity: Option<Arc<UnityCLI>>
 }
 
@@ -40,7 +41,7 @@ impl App {
             projects: Vec::new(),
             editor_versions: None,
             templates: None,
-            task: None,
+            project_task: None,
             unity: match UnityCLI::discover() {
                 Ok(unity_instance) => {
                     Some(Arc::new(unity_instance))
@@ -57,16 +58,37 @@ impl App {
         let mut app = Self::new();
         app.refresh();
 
-        ratatui::run(|terminal| {
-            loop {
-                terminal.draw(|frame| crate::ui::render(frame, &mut app))?;
+        let mut terminal = ratatui::init();
+
+        let result = loop {
+            terminal.draw(|frame| crate::ui::render(frame, &mut app))?;
+
+            if let Some(ref task) = app.project_task {
+                if let Some(result) = task.poll() {
+                    app.project_task = None;
+                    match result {
+                        Ok((names, projects)) => {
+                            app.list_items = names;
+                            app.projects = projects;
+                        }
+                        Err(err) => {
+                            app.dialogue.current = Dialogue::Error(err.to_string());
+                        }
+                    }
+                }
+            }
+
+            if event::poll(Duration::from_millis(16))? {
                 if let Some(key) = event::read()?.as_key_press_event() {
                     if app.handle_key(key) {
                         break Ok(());
                     }
                 }
             }
-        })
+        };
+
+        ratatui::restore();
+        result
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> bool {
@@ -154,13 +176,12 @@ impl App {
         self.projects.clear();
 
         if let Some(unity) = &self.unity {
-            let u = unity.clone();
+            let uclone = unity.clone();
 
-            self.task = Some(AsyncTask::new(move || {
-                let result = u.list_projects();
-
-                result.map(|projects| {
-                    projects.iter().map(|project| project.name.clone()).collect::<Vec<String>>()
+            self.project_task = Some(AsyncTask::new(move || {
+                uclone.list_projects().map(|projects| {
+                    let names = projects.iter().map(|p| p.name.clone()).collect();
+                    (names, projects)
                 })
             }));
         }
