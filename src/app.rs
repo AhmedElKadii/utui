@@ -1,3 +1,4 @@
+#![allow(warnings)]
 use arboard::Clipboard;
 use crossterm::event::{self, KeyCode, KeyEvent, KeyModifiers};
 use ratatui::widgets::ListState;
