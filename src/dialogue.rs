@@ -7,12 +7,13 @@ pub enum Dialogue {
     DeleteConfirm { with_dir: bool },
     Input,
     Error(String),
+    Info(String)
 }
 
 #[derive(Default, PartialEq)]
 pub enum DialogueSelection {
-    None,
     #[default]
+    None,
     Ok,
     Cancel,
 }

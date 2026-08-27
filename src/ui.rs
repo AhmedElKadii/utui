@@ -49,6 +49,9 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         Dialogue::Error(message) => {
             popup_dialogue(app, frame, "Error", message, Some("OK"), None);
         }
+        Dialogue::Info(message) => {
+            popup_dialogue(app, frame, "Info", message, None, None);
+        }
         Dialogue::Input => match app.input.step {
             InputStep::Name => {
                 app.input.render_input_box(frame, "Project Name", None);
@@ -81,11 +84,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         },
         Dialogue::None => {
             if app.project_task.is_some() {
-                let loading = Line::from_iter([
-                    Span::from(" Loading projects...").bold().yellow(),
-                    Span::from(" please wait."),
-                ]);
-                frame.render_widget(loading.left_aligned(), middle);
+                app.dialogue.current = Dialogue::Info(String::new());
             } else if app.list_items.is_empty() {
                 let empty = Line::from_iter([
                     Span::from(" No projects available...").bold(),
@@ -111,13 +110,15 @@ fn popup_dialogue(
 ) {
     let area = frame.area();
     const MIN_WIDTH: u16 = 45;
-    const MIN_HEIGHT: u16 = 9;
+    
+    let has_buttons = ok_label.is_some() || cancel_label.is_some();
+    let min_height: u16 = if has_buttons { 9 } else { 5 };
 
     let popup_width = ((area.width as f32 * 0.25) as u16)
         .max(MIN_WIDTH)
         .min(area.width);
     let popup_height = ((area.height as f32 * 0.18) as u16)
-        .max(MIN_HEIGHT)
+        .max(min_height)
         .min(area.height);
 
     let centered_area = area.centered(
@@ -130,54 +131,66 @@ fn popup_dialogue(
     let inner_area = popup_block.inner(centered_area);
     frame.render_widget(popup_block, centered_area);
 
-    let chunks = Layout::vertical([
-        Constraint::Length(1),
-        Constraint::Fill(1),
-        Constraint::Length(1),
-        Constraint::Length(3),
-    ])
-    .split(inner_area);
+    let constraints = if has_buttons {
+        vec![
+            Constraint::Length(1),
+            Constraint::Fill(1),
+            Constraint::Length(1),
+            Constraint::Length(3),
+        ]
+    } else {
+        vec![
+            Constraint::Fill(1),
+            Constraint::Length(1),
+            Constraint::Fill(1),
+        ]
+    };
+
+    let chunks = Layout::vertical(constraints).split(inner_area);
+    let text_chunk = if has_buttons { chunks[1] } else { chunks[1] };
 
     let paragraph = Paragraph::new(message.to_string())
         .block(Block::new().padding(Padding::horizontal(1)))
         .wrap(Wrap { trim: true })
         .alignment(Alignment::Center);
-    frame.render_widget(paragraph, chunks[1]);
+    frame.render_widget(paragraph, text_chunk);
 
-    let button_chunks = Layout::horizontal([
-        Constraint::Fill(1),
-        Constraint::Length(ok_label.map_or(0, |s| s.chars().count() as u16 + 4)),
-        Constraint::Length(2),
-        Constraint::Length(cancel_label.map_or(0, |s| s.chars().count() as u16 + 4)),
-        Constraint::Fill(1),
-    ])
-    .split(chunks[3]);
+    if has_buttons {
+        let button_chunks = Layout::horizontal([
+            Constraint::Fill(1),
+            Constraint::Length(ok_label.map_or(0, |s| s.chars().count() as u16 + 4)),
+            Constraint::Length(2),
+            Constraint::Length(cancel_label.map_or(0, |s| s.chars().count() as u16 + 4)),
+            Constraint::Fill(1),
+        ])
+        .split(chunks[3]);
 
-    let ok_style = if app.dialogue.selection == DialogueSelection::Ok {
-        Modifier::REVERSED
-    } else {
-        Modifier::empty()
-    };
-    let cancel_style = if app.dialogue.selection == DialogueSelection::Cancel {
-        Modifier::REVERSED
-    } else {
-        Modifier::empty()
-    };
+        let ok_style = if app.dialogue.selection == DialogueSelection::Ok {
+            Modifier::REVERSED
+        } else {
+            Modifier::empty()
+        };
+        let cancel_style = if app.dialogue.selection == DialogueSelection::Cancel {
+            Modifier::REVERSED
+        } else {
+            Modifier::empty()
+        };
 
-    if let Some(label) = ok_label {
-        let ok_btn = Paragraph::new(label)
-            .block(Block::bordered().padding(Padding::horizontal(1)))
-            .style(ok_style)
-            .alignment(Alignment::Center);
-        frame.render_widget(ok_btn, button_chunks[1]);
-    }
+        if let Some(label) = ok_label {
+            let ok_btn = Paragraph::new(label)
+                .block(Block::bordered().padding(Padding::horizontal(1)))
+                .style(ok_style)
+                .alignment(Alignment::Center);
+            frame.render_widget(ok_btn, button_chunks[1]);
+        }
 
-    if let Some(label) = cancel_label {
-        let cancel_btn = Paragraph::new(label)
-            .block(Block::bordered().padding(Padding::horizontal(1)))
-            .style(cancel_style)
-            .alignment(Alignment::Center);
-        frame.render_widget(cancel_btn, button_chunks[3]);
+        if let Some(label) = cancel_label {
+            let cancel_btn = Paragraph::new(label)
+                .block(Block::bordered().padding(Padding::horizontal(1)))
+                .style(cancel_style)
+                .alignment(Alignment::Center);
+            frame.render_widget(cancel_btn, button_chunks[3]);
+        }
     }
 }
 

@@ -26,6 +26,7 @@ pub struct App {
     pub editor_versions: Option<Vec<String>>,
     pub templates: Option<Vec<Template>>,
     pub project_task: Option<AsyncTask<Result<(Vec<String>, Vec<Project>), AppError>>>,
+    pub tick_counter: u64, 
     unity: Option<Arc<UnityCLI>>
 }
 
@@ -42,6 +43,7 @@ impl App {
             editor_versions: None,
             templates: None,
             project_task: None,
+            tick_counter: 0,
             unity: match UnityCLI::discover() {
                 Ok(unity_instance) => {
                     Some(Arc::new(unity_instance))
@@ -63,6 +65,8 @@ impl App {
         let result = loop {
             terminal.draw(|frame| crate::ui::render(frame, &mut app))?;
 
+            app.tick_counter = app.tick_counter.wrapping_add(1);
+
             if let Some(ref task) = app.project_task {
                 if let Some(result) = task.poll() {
                     app.project_task = None;
@@ -70,11 +74,14 @@ impl App {
                         Ok((names, projects)) => {
                             app.list_items = names;
                             app.projects = projects;
+                            app.dialogue.current = Dialogue::None;
                         }
                         Err(err) => {
                             app.dialogue.current = Dialogue::Error(err.to_string());
                         }
                     }
+                } else if matches!(app.dialogue.current, Dialogue::Info(_)) {
+                    app.update_loading(String::from("Loading projects..."));
                 }
             }
 
@@ -91,11 +98,22 @@ impl App {
         result
     }
 
+    pub fn update_loading(&mut self, message: String) {
+        let spinner_frames = ["⠦", "⠖", "⠲", "⠴"];
+
+        let index = (self.tick_counter / 8) % spinner_frames.len() as u64;
+        let spinner = spinner_frames[index as usize];
+
+        self.dialogue.current = Dialogue::Info(format!("{} {}", spinner, message));
+    }
+
     pub fn handle_key(&mut self, key: KeyEvent) -> bool {
         match self.dialogue.current {
             Dialogue::None => self.handle_main_key(key),
             Dialogue::Input => self.handle_input_key(key),
-            Dialogue::DeleteConfirm { .. } | Dialogue::Error(_) => self.handle_dialogue_key(key),
+            Dialogue::DeleteConfirm { .. } | 
+                Dialogue::Error(_) |
+                Dialogue::Info(_) => self.handle_dialogue_key(key),
         }
     }
 
@@ -164,7 +182,7 @@ impl App {
                 self.dialogue.selection = DialogueSelection::Cancel;
                 self.execute_selection();
             }
-            KeyCode::Enter => self.execute_selection(),
+            KeyCode::Enter if self.dialogue.selection != DialogueSelection::None => self.execute_selection(),
             KeyCode::Char('q') => return true,
             _ => {}
         }
@@ -308,7 +326,7 @@ impl App {
                     self.finish_create();
                 }
             }
-            Dialogue::Error(_) => self.reset_after_dialogue(),
+            Dialogue::Error(_) | Dialogue::Info(_) => self.reset_after_dialogue(),
             Dialogue::None => {}
         }
     }
