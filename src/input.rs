@@ -1,10 +1,8 @@
-use color_eyre::Result;
-use crossterm::event::{self, KeyCode, KeyEventKind};
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Position};
 use ratatui::style::{Color, Modifier, Style, Stylize};
-use ratatui::text::{Line, Span, Text};
-use ratatui::widgets::{Block, List, ListItem, ListState, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState};
-use ratatui::{DefaultTerminal, Frame};
+use ratatui::text::{Line, Text};
+use ratatui::widgets::{Block, ListState, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState};
+use ratatui::Frame;
 use unicode_width::UnicodeWidthStr;
 
 #[derive(Default, PartialEq)]
@@ -90,6 +88,11 @@ impl InputHandler {
         self.reset_cursor();
     }
 
+    pub fn set_text(&mut self, text: impl Into<String>) {
+        self.input = text.into();
+        self.character_index = self.input.chars().count();
+    }
+
     pub fn render_input_box(&mut self, frame: &mut Frame, title_message: &str, list_data: Option<(&mut ListState, Vec<String>)>) {
         let list_height = if let Some((_, list_items)) = &list_data {
             std::cmp::min(4 * list_items.len() as u16, 20)
@@ -153,7 +156,7 @@ impl InputHandler {
                 chunks[1].y + 1,
         ));
 
-        if let Some((mut list_state, list_items)) = list_data {
+        if let Some((list_state, list_items)) = list_data {
             if list_items.len() == 0 { list_state.select(None); }
 
             let base_width = chunks[2].width.saturating_sub(4) as usize;
