@@ -65,23 +65,27 @@ pub fn render(frame: &mut Frame, app: &mut App) {
                 );
             }
             InputStep::Version => {
-                if app.list_items.is_empty() {
-                    app.dialogue.current = Dialogue::Error("No editors available...".to_string());
-                } else {
+                if let Some(versions) = app.editor_versions.clone() {
                     app.input.render_input_box(
                         frame,
                         "Editor Version",
-                        Some((&mut app.list_state, app.list_items.clone())),
+                        Some((&mut app.list_state, versions)),
                     );
+                } else {
+                    app.dialogue.current = Dialogue::Error("No editors available...".to_string());
                 }
             }
             InputStep::Template => {
-                let labels = app.template_labels();
-                app.input.render_input_box(
-                    frame,
-                    "Project Template",
-                    Some((&mut app.list_state, labels)),
-                );
+                if app.templates.is_some() {
+                    let labels = app.template_labels();
+                    app.input.render_input_box(
+                        frame,
+                        "Project Template",
+                        Some((&mut app.list_state, labels)),
+                    );
+                } else {
+                    app.dialogue.current = Dialogue::Error("No templates found...".to_string());
+                }
             }
             _ => {}
         },

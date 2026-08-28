@@ -18,8 +18,8 @@ use crate::threading::AsyncTask;
 #[derive(Default)]
 pub struct Tasks {
     pub projects: Option<AsyncTask<Result<(Vec<String>, Vec<Project>), AppError>>>,
-    pub editors: Option<AsyncTask<Result<(Vec<String>), AppError>>>,
-    pub templates: Option<AsyncTask<Result<(Vec<String>, Vec<Template>), AppError>>>,
+    pub editors: Option<AsyncTask<Result<Vec<String>, AppError>>>,
+    pub templates: Option<AsyncTask<Result<Vec<Template>, AppError>>>,
 }
 
 pub struct App {
@@ -102,6 +102,27 @@ impl App {
                             } else {
                                 app.editor_versions = Some(editors.clone());
                                 app.list_items = editors;
+                                app.dialogue.current = Dialogue::Input;
+                            }
+                        }
+                        Err(err) => {
+                            app.dialogue.current = Dialogue::Error(err.to_string());
+                        }
+                    }
+                } else if matches!(app.dialogue.current, Dialogue::Info(_)) {
+                    app.update_loading(String::from("Loading editor versions..."));
+                }
+            }
+
+            if let Some(ref task) = app.tasks.templates {
+                if let Some(result) = task.poll() {
+                    app.tasks.templates = None;
+                    match result {
+                        Ok(templates) => {
+                            if templates.is_empty() {
+                                app.dialogue.current = Dialogue::Error("No templates found...".to_string());
+                            } else {
+                                app.templates = Some(templates.clone());
                                 app.dialogue.current = Dialogue::Input;
                             }
                         }
@@ -225,12 +246,14 @@ impl App {
         if let Some(unity) = &self.unity {
             let uclone = unity.clone();
 
-            self.tasks.projects = Some(AsyncTask::new(move || {
-                uclone.list_projects().map(|projects| {
-                    let names = projects.iter().map(|p| p.name.clone()).collect();
-                    (names, projects)
-                })
-            }));
+            if self.tasks.projects.is_none() {
+                self.tasks.projects = Some(AsyncTask::new(move || {
+                    uclone.list_projects().map(|projects| {
+                        let names = projects.iter().map(|p| p.name.clone()).collect();
+                        (names, projects)
+                    })
+                }));
+            }
         }
 
         self.dialogue.close();
@@ -244,7 +267,6 @@ impl App {
 
         match self.input.step {
             InputStep::Path => self.refresh_path_suggestions(),
-            InputStep::Version => self.refresh_version_suggestions(),
             InputStep::Template => self.refresh_template_suggestions(),
             _ => {}
         }
@@ -277,13 +299,15 @@ impl App {
 
     fn refresh_version_suggestions(&mut self) {
         if self.editor_versions.is_none() {
-            if let Some(unity) = &self.unity {
-                let uclone = unity.clone();
+            if self.tasks.editors.is_none() {
+                if let Some(unity) = &self.unity {
+                    let uclone = unity.clone();
 
-                self.dialogue.current = Dialogue::Info(String::new());
-                self.tasks.editors = Some(AsyncTask::new(move || {
-                    uclone.list_editors()
-                }));
+                    // self.dialogue.current = Dialogue::Info(String::new());
+                    self.tasks.editors = Some(AsyncTask::new(move || {
+                        uclone.list_editors()
+                    }));
+                }
             }
         }
 
@@ -292,16 +316,23 @@ impl App {
 
     fn refresh_template_suggestions(&mut self) {
         if self.templates.is_none() {
-            let version = self
-                .dialogue
-                .selected_project
-                .as_ref()
-                .map(|project| project.editor_version.clone())
-                .unwrap_or_default();
-            self.templates = self
-                .unity
-                .as_ref()
-                .and_then(|unity| unity.list_templates(&version).ok());
+            if self.tasks.templates.is_none() {
+                if let Some(unity) = &self.unity {
+                    let uclone = unity.clone();
+                    let version = self
+                        .dialogue
+                        .selected_project
+                        .as_ref()
+                        .map(|project| project.editor_version.clone())
+                        .unwrap_or_default();
+
+                    if self.tasks.templates.is_none() {
+                        self.tasks.templates = Some(AsyncTask::new(move || {
+                            uclone.list_templates(&version)
+                        }));
+                    }
+                }
+            }
         }
     }
 
@@ -334,6 +365,14 @@ impl App {
                     self.delete_selected(with_dir);
                 }
                 self.reset_after_dialogue();
+            }
+            Dialogue::Error(_) => {
+                self.tasks.projects = None;
+                self.tasks.editors = None;
+                self.tasks.templates = None;
+                self.reset_after_dialogue();
+                self.input.submit_message();
+                self.refresh();
             }
             Dialogue::Input => {
                 if self.dialogue.selection == DialogueSelection::Cancel {
@@ -474,7 +513,9 @@ impl App {
         self.dialogue.selected_project = Some(Project::default());
         self.dialogue.selection = DialogueSelection::Ok;
         self.input.step = InputStep::Name;
+        self.editor_versions = None;
         self.templates = None;
+        self.refresh_version_suggestions()
     }
 
     fn open_delete_dialogue(&mut self, with_dir: bool) {
