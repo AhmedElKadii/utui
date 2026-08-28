@@ -447,11 +447,12 @@ impl App {
                 true
             }
             InputStep::Version => {
-                // TODO: Figure out why on EARTH this thing isn't working!
-                if !self.list_items.contains(&self.input.value) {
-                    self.dialogue.return_to = self.dialogue.current.clone();
-                    self.dialogue.current = Dialogue::Error("Please select a valid version!".to_string());
-                    return false;
+                if let Some(versions) = self.editor_versions.clone() {
+                    if !versions.contains(&self.input.value) {
+                        self.dialogue.return_to = self.dialogue.current.clone();
+                        self.dialogue.current = Dialogue::Error("Please select a valid version!".to_string());
+                        return false;
+                    }
                 }
                 let version = self.input.value.clone();
                 if let Some(project) = self.dialogue.selected_project.as_mut() {
@@ -533,7 +534,7 @@ impl App {
                 (self.editor_versions.as_ref(), self.list_state.selected())
             {
                 if let Some(value) = versions.get(index) {
-                    self.input.set_text(value);
+                    self.input.set_text(value.trim());
                 }
             }
         }
