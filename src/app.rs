@@ -15,6 +15,9 @@ use crate::template::Template;
 use crate::unity::UnityCLI;
 use crate::threading::AsyncTask;
 
+const FETCH_TIMOUT_SEC: u64 = 15;
+const FRAME_DELTA: u64 = 16;
+
 #[derive(Default)]
 pub struct Tasks {
     pub projects: Option<AsyncTask<Result<(Vec<String>, Vec<Project>), AppError>>>,
@@ -36,7 +39,6 @@ pub struct App {
     pub capture_input: bool,
     pub timer: u64,
     pub tick_counter: u64, 
-    pub fetch_timout_s: u64,
     pub tasks: Tasks,
     unity: Option<Arc<UnityCLI>>
 }
@@ -57,7 +59,6 @@ impl App {
             tasks: Tasks::default(),
             timer: 0,
             tick_counter: 0,
-            fetch_timout_s: 15,
             unity: match UnityCLI::discover() {
                 Ok(unity_instance) => {
                     Some(Arc::new(unity_instance))
@@ -156,8 +157,8 @@ impl App {
                     app.dialogue.current = Dialogue::Info(String::new());
                     app.update_loading(String::from("Loading templates..."));
                     app.capture_input = false;
-                    if (app.tick_counter - app.timer >= app.fetch_timout_s * 1000 / 16 && app.timer > 0 &&
-                        app.tasks.local_templates.is_none()) {
+                    if (app.tick_counter - app.timer >= FETCH_TIMOUT_SEC * 1000 / FRAME_DELTA && 
+                        app.timer > 0 && app.tasks.local_templates.is_none()) {
                         app.timer = 0;
                         app.refresh_local_template_suggestions();
                         app.tasks.templates = None;
@@ -192,7 +193,7 @@ impl App {
             }
 
 
-            if event::poll(Duration::from_millis(16))? {
+            if event::poll(Duration::from_millis(FRAME_DELTA))? {
                 if let Some(key) = event::read()?.as_key_press_event() {
                     if app.handle_key(key) {
                         break Ok(());
