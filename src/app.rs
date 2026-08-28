@@ -32,6 +32,7 @@ pub struct App {
     pub projects: Vec<Project>,
     pub editor_versions: Option<Vec<String>>,
     pub templates: Option<Vec<Template>>,
+    pub capture_input: bool,
     pub tick_counter: u64, 
     pub tasks: Tasks,
     unity: Option<Arc<UnityCLI>>
@@ -49,6 +50,7 @@ impl App {
             projects: Vec::new(),
             editor_versions: None,
             templates: None,
+            capture_input: true,
             tasks: Tasks::default(),
             tick_counter: 0,
             unity: match UnityCLI::discover() {
@@ -82,13 +84,16 @@ impl App {
                             app.list_items = names;
                             app.projects = projects;
                             app.dialogue.current = Dialogue::None;
+                            app.capture_input = true;
                         }
                         Err(err) => {
                             app.dialogue.current = Dialogue::Error(err.to_string());
+                            app.capture_input = true;
                         }
                     }
                 } else if matches!(app.dialogue.current, Dialogue::Info(_)) {
                     app.update_loading(String::from("Loading projects..."));
+                    app.capture_input = false;
                 }
             }
 
@@ -102,15 +107,24 @@ impl App {
                             } else {
                                 app.editor_versions = Some(editors.clone());
                                 app.list_items = editors;
-                                app.dialogue.current = Dialogue::Input;
+                                if !matches!(app.dialogue.current, Dialogue::Error(_)) {
+                                    app.dialogue.current = Dialogue::Input;
+                                }
                             }
+                            app.capture_input = true;
                         }
                         Err(err) => {
                             app.dialogue.current = Dialogue::Error(err.to_string());
+                            app.capture_input = true;
                         }
                     }
-                } else if matches!(app.dialogue.current, Dialogue::Info(_)) {
+                } else if matches!(app.dialogue.current, Dialogue::Info(_)) ||
+                    matches!(app.input.step, InputStep::Version){
+                    // ensures that if the user gets to InputStep::Version while still Loading
+                    // that it shows the loading prompt instead of saying that there are none.
+                    app.dialogue.current = Dialogue::Info(String::new());
                     app.update_loading(String::from("Loading editor versions..."));
+                    app.capture_input = false;
                 }
             }
 
@@ -125,13 +139,18 @@ impl App {
                                 app.templates = Some(templates.clone());
                                 app.dialogue.current = Dialogue::Input;
                             }
+                            app.capture_input = true;
                         }
                         Err(err) => {
                             app.dialogue.current = Dialogue::Error(err.to_string());
+                            app.capture_input = true;
                         }
                     }
-                } else if matches!(app.dialogue.current, Dialogue::Info(_)) {
-                    app.update_loading(String::from("Loading editor versions..."));
+                } else if matches!(app.dialogue.current, Dialogue::Info(_)) ||
+                    matches!(app.input.step, InputStep::Template){
+                    app.dialogue.current = Dialogue::Info(String::new());
+                    app.update_loading(String::from("Loading templates..."));
+                    app.capture_input = false;
                 }
             }
 
@@ -158,6 +177,7 @@ impl App {
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> bool {
+        if !self.capture_input { return false; }
         match self.dialogue.current {
             Dialogue::None => self.handle_main_key(key),
             Dialogue::Input => self.handle_input_key(key),
@@ -267,7 +287,6 @@ impl App {
 
         match self.input.step {
             InputStep::Path => self.refresh_path_suggestions(),
-            InputStep::Template => self.refresh_template_suggestions(),
             _ => {}
         }
     }
@@ -303,7 +322,6 @@ impl App {
                 if let Some(unity) = &self.unity {
                     let uclone = unity.clone();
 
-                    // self.dialogue.current = Dialogue::Info(String::new());
                     self.tasks.editors = Some(AsyncTask::new(move || {
                         uclone.list_editors()
                     }));
@@ -359,6 +377,11 @@ impl App {
     }
 
     pub fn execute_selection(&mut self) {
+        if self.dialogue.return_to == Dialogue::None { 
+            self.tasks.projects = None;
+            self.tasks.editors = None;
+            self.tasks.templates = None;
+        }
         match self.dialogue.current {
             Dialogue::DeleteConfirm { with_dir } => {
                 if self.dialogue.selection == DialogueSelection::Ok {
@@ -366,7 +389,11 @@ impl App {
                 }
                 self.reset_after_dialogue();
             }
-            Dialogue::Error(_) => {
+            Dialogue::Error(_) | Dialogue::Info(_) => {
+                if self.dialogue.return_to != Dialogue::None { 
+                    self.dialogue.current = self.dialogue.return_to.clone();
+                    return; 
+                }
                 self.tasks.projects = None;
                 self.tasks.editors = None;
                 self.tasks.templates = None;
@@ -383,6 +410,8 @@ impl App {
                 }
 
                 if self.input.value.is_empty() {
+                    self.dialogue.return_to = self.dialogue.current.clone();
+                    self.dialogue.current = Dialogue::Error("No input!".to_string());
                     return;
                 }
 
@@ -418,7 +447,10 @@ impl App {
                 true
             }
             InputStep::Version => {
+                // TODO: Figure out why on EARTH this thing isn't working!
                 if !self.list_items.contains(&self.input.value) {
+                    self.dialogue.return_to = self.dialogue.current.clone();
+                    self.dialogue.current = Dialogue::Error("Please select a valid version!".to_string());
                     return false;
                 }
                 let version = self.input.value.clone();
@@ -426,6 +458,7 @@ impl App {
                     project.editor_version = version;
                 }
                 self.input.step = InputStep::Template;
+                self.refresh_template_suggestions();
                 true
             }
             InputStep::Template => {

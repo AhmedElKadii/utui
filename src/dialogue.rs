@@ -1,6 +1,6 @@
 use crate::project::Project;
 
-#[derive(Default, PartialEq)]
+#[derive(Clone, Default, PartialEq)]
 pub enum Dialogue {
     #[default]
     None,
@@ -21,6 +21,7 @@ pub enum DialogueSelection {
 #[derive(Default)]
 pub struct DialogueState {
     pub current: Dialogue,
+    pub return_to: Dialogue,
     pub selection: DialogueSelection,
     pub selected_project: Option<Project>,
 }
