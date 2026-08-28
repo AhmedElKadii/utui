@@ -20,6 +20,7 @@ pub struct Tasks {
     pub projects: Option<AsyncTask<Result<(Vec<String>, Vec<Project>), AppError>>>,
     pub editors: Option<AsyncTask<Result<Vec<String>, AppError>>>,
     pub templates: Option<AsyncTask<Result<Vec<Template>, AppError>>>,
+    pub local_templates: Option<AsyncTask<Result<Vec<Template>, AppError>>>,
 }
 
 pub struct App {
@@ -33,7 +34,9 @@ pub struct App {
     pub editor_versions: Option<Vec<String>>,
     pub templates: Option<Vec<Template>>,
     pub capture_input: bool,
+    pub timer: u64,
     pub tick_counter: u64, 
+    pub fetch_timout_s: u64,
     pub tasks: Tasks,
     unity: Option<Arc<UnityCLI>>
 }
@@ -52,7 +55,9 @@ impl App {
             templates: None,
             capture_input: true,
             tasks: Tasks::default(),
+            timer: 0,
             tick_counter: 0,
+            fetch_timout_s: 15,
             unity: match UnityCLI::discover() {
                 Ok(unity_instance) => {
                     Some(Arc::new(unity_instance))
@@ -151,8 +156,41 @@ impl App {
                     app.dialogue.current = Dialogue::Info(String::new());
                     app.update_loading(String::from("Loading templates..."));
                     app.capture_input = false;
+                    if (app.tick_counter - app.timer >= app.fetch_timout_s * 1000 / 16 && app.timer > 0 &&
+                        app.tasks.local_templates.is_none()) {
+                        app.timer = 0;
+                        app.refresh_local_template_suggestions();
+                        app.tasks.templates = None;
+                    }
                 }
             }
+
+            if let Some(ref task) = app.tasks.local_templates {
+                if let Some(result) = task.poll() {
+                    app.tasks.local_templates = None;
+                    match result {
+                        Ok(templates) => {
+                            if templates.is_empty() {
+                                app.dialogue.current = Dialogue::Error("No templates found...".to_string());
+                            } else {
+                                app.templates = Some(templates.clone());
+                                app.dialogue.current = Dialogue::Input;
+                            }
+                            app.capture_input = true;
+                        }
+                        Err(err) => {
+                            app.dialogue.current = Dialogue::Error(err.to_string());
+                            app.capture_input = true;
+                        }
+                    }
+                } else if matches!(app.dialogue.current, Dialogue::Info(_)) ||
+                    matches!(app.input.step, InputStep::Template){
+                    app.dialogue.current = Dialogue::Info(String::new());
+                    app.update_loading(String::from("Timed out, Loading local templates..."));
+                    app.capture_input = false;
+                }
+            }
+
 
             if event::poll(Duration::from_millis(16))? {
                 if let Some(key) = event::read()?.as_key_press_event() {
@@ -348,6 +386,29 @@ impl App {
                         self.tasks.templates = Some(AsyncTask::new(move || {
                             uclone.list_templates(&version)
                         }));
+                        self.timer = self.tick_counter;
+                    }
+                }
+            }
+        }
+    }
+
+    fn refresh_local_template_suggestions(&mut self) {
+        if self.templates.is_none() {
+            if self.tasks.local_templates.is_none() {
+                if let Some(unity) = &self.unity {
+                    let uclone = unity.clone();
+                    let version = self
+                        .dialogue
+                        .selected_project
+                        .as_ref()
+                        .map(|project| project.editor_version.clone())
+                        .unwrap_or_default();
+
+                    if self.tasks.local_templates.is_none() {
+                        self.tasks.local_templates = Some(AsyncTask::new(move || {
+                            uclone.list_offline_templates(&version)
+                        }));
                     }
                 }
             }
@@ -377,11 +438,6 @@ impl App {
     }
 
     pub fn execute_selection(&mut self) {
-        if self.dialogue.return_to == Dialogue::None { 
-            self.tasks.projects = None;
-            self.tasks.editors = None;
-            self.tasks.templates = None;
-        }
         match self.dialogue.current {
             Dialogue::DeleteConfirm { with_dir } => {
                 if self.dialogue.selection == DialogueSelection::Ok {
@@ -403,6 +459,11 @@ impl App {
             }
             Dialogue::Input => {
                 if self.dialogue.selection == DialogueSelection::Cancel {
+                    if self.dialogue.return_to == Dialogue::None { 
+                        self.tasks.projects = None;
+                        self.tasks.editors = None;
+                        self.tasks.templates = None;
+                    }
                     self.reset_after_dialogue();
                     self.input.submit_message();
                     self.refresh();

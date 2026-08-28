@@ -53,6 +53,13 @@ impl UnityCLI {
         Ok(data.iter().map(Template::from_json).collect())
     }
 
+    pub fn list_offline_templates(&self, editor_version: &str) -> Result<Vec<Template>, AppError> {
+        let editor_arg = format!("--editor={editor_version}");
+        let json = self.invoke(&["templates", "list", &editor_arg, "--installed", "--json"])?;
+        let data = json_data_array(&json)?;
+        Ok(data.iter().map(Template::from_json).collect())
+    }
+
     pub fn open_project(&self, project: &Project) -> Result<(), AppError> {
         let output = self.raw(&["p", "open", &project.path])?;
         match parse_cli_response(&output) {
