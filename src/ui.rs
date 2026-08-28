@@ -4,7 +4,7 @@ use ratatui::style::{Color, Modifier, Stylize};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear, List, ListState, Padding, Paragraph, Wrap};
 
-use crate::app::App;
+use crate::app::{App, fuzzy_filter_sorted};
 use crate::config;
 use crate::dialogue::{Dialogue, DialogueSelection};
 use crate::input::InputStep;
@@ -47,10 +47,13 @@ pub fn render(frame: &mut Frame, app: &mut App) {
             }
         }
         Dialogue::Error(message) => {
-            popup_dialogue(app, frame, "Error", message, Some("OK"), None);
+            popup_dialogue(app, frame, "Error", message, Some("CONFIRM"), None);
         }
         Dialogue::Info(message) => {
             popup_dialogue(app, frame, "Info", message, None, None);
+        }
+        Dialogue::Confirm(message) => {
+            popup_dialogue(app, frame, "Info", message, Some("CONFIRM"), None);
         }
         Dialogue::Input => match app.input.step {
             InputStep::Name => {
@@ -66,10 +69,11 @@ pub fn render(frame: &mut Frame, app: &mut App) {
             }
             InputStep::Version => {
                 if let Some(versions) = app.editor_versions.clone() {
+                    app.list_items = fuzzy_filter_sorted(&app.input.value, versions);
                     app.input.render_input_box(
                         frame,
                         "Editor Version",
-                        Some((&mut app.list_state, versions)),
+                        Some((&mut app.list_state, app.list_items.clone())),
                     );
                 } else {
                     app.dialogue.current = Dialogue::Error("No editors available...".to_string());
@@ -95,7 +99,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
             } else if app.list_items.is_empty() {
                 let empty = Line::from_iter([
                     Span::from(" No projects available...").bold(),
-                    Span::from(" press c to create a project or a to add an existing one."),
+                    Span::from(" press c to create a project or add an existing one."),
                 ]);
                 frame.render_widget(empty.left_aligned(), middle);
             } else {
@@ -104,7 +108,9 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         }
     }
 
-    render_help_text(frame, bottom);
+    if matches!(app.dialogue.current, Dialogue::None) {
+        render_help_text(frame, bottom);
+    }
 }
 
 fn popup_dialogue(

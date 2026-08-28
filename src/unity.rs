@@ -61,7 +61,7 @@ impl UnityCLI {
     }
 
     pub fn open_project(&self, project: &Project) -> Result<(), AppError> {
-        let output = self.raw(&["p", "open", &project.path])?;
+        let output = self.raw(&["p", "open", &project.path, "--json"])?;
         match parse_cli_response(&output) {
             Ok(true) => println!("Project opened successfully"),
             Ok(false) | Err(_) => {}
@@ -101,7 +101,6 @@ impl UnityCLI {
             "--json",
         ]) {
             Ok(_) => {
-                println!("Project created successfully");
                 Ok(())
             }
             Err(err) => Err(err),

@@ -24,6 +24,9 @@ pub struct Tasks {
     pub editors: Option<AsyncTask<Result<Vec<String>, AppError>>>,
     pub templates: Option<AsyncTask<Result<Vec<Template>, AppError>>>,
     pub local_templates: Option<AsyncTask<Result<Vec<Template>, AppError>>>,
+    pub proj_create: Option<AsyncTask<Result<(), AppError>>>,
+    pub proj_open: Option<AsyncTask<Result<(), AppError>>>,
+    pub proj_delete: Option<AsyncTask<Result<(), AppError>>>
 }
 
 pub struct App {
@@ -36,7 +39,7 @@ pub struct App {
     pub projects: Vec<Project>,
     pub editor_versions: Option<Vec<String>>,
     pub templates: Option<Vec<Template>>,
-    pub capture_input: bool,
+    pub open_after_creation: bool,
     pub timer: u64,
     pub tick_counter: u64, 
     pub tasks: Tasks,
@@ -55,8 +58,8 @@ impl App {
             projects: Vec::new(),
             editor_versions: None,
             templates: None,
-            capture_input: true,
             tasks: Tasks::default(),
+            open_after_creation: false,
             timer: 0,
             tick_counter: 0,
             unity: match UnityCLI::discover() {
@@ -82,6 +85,7 @@ impl App {
 
             app.tick_counter = app.tick_counter.wrapping_add(1);
 
+            // TODO: function needed desperately lol, too much code repetion
             if let Some(ref task) = app.tasks.projects {
                 if let Some(result) = task.poll() {
                     app.tasks.projects = None;
@@ -90,16 +94,13 @@ impl App {
                             app.list_items = names;
                             app.projects = projects;
                             app.dialogue.current = Dialogue::None;
-                            app.capture_input = true;
                         }
                         Err(err) => {
                             app.dialogue.current = Dialogue::Error(err.to_string());
-                            app.capture_input = true;
                         }
                     }
                 } else if matches!(app.dialogue.current, Dialogue::Info(_)) {
                     app.update_loading(String::from("Loading projects..."));
-                    app.capture_input = false;
                 }
             }
 
@@ -117,11 +118,9 @@ impl App {
                                     app.dialogue.current = Dialogue::Input;
                                 }
                             }
-                            app.capture_input = true;
                         }
                         Err(err) => {
                             app.dialogue.current = Dialogue::Error(err.to_string());
-                            app.capture_input = true;
                         }
                     }
                 } else if matches!(app.dialogue.current, Dialogue::Info(_)) ||
@@ -130,7 +129,6 @@ impl App {
                     // that it shows the loading prompt instead of saying that there are none.
                     app.dialogue.current = Dialogue::Info(String::new());
                     app.update_loading(String::from("Loading editor versions..."));
-                    app.capture_input = false;
                 }
             }
 
@@ -145,18 +143,15 @@ impl App {
                                 app.templates = Some(templates.clone());
                                 app.dialogue.current = Dialogue::Input;
                             }
-                            app.capture_input = true;
                         }
                         Err(err) => {
                             app.dialogue.current = Dialogue::Error(err.to_string());
-                            app.capture_input = true;
                         }
                     }
                 } else if matches!(app.dialogue.current, Dialogue::Info(_)) ||
                     matches!(app.input.step, InputStep::Template){
                     app.dialogue.current = Dialogue::Info(String::new());
                     app.update_loading(String::from("Loading templates..."));
-                    app.capture_input = false;
                     if (app.tick_counter - app.timer >= FETCH_TIMOUT_SEC * 1000 / FRAME_DELTA && 
                         app.timer > 0 && app.tasks.local_templates.is_none()) {
                         app.timer = 0;
@@ -177,21 +172,84 @@ impl App {
                                 app.templates = Some(templates.clone());
                                 app.dialogue.current = Dialogue::Input;
                             }
-                            app.capture_input = true;
                         }
                         Err(err) => {
                             app.dialogue.current = Dialogue::Error(err.to_string());
-                            app.capture_input = true;
                         }
                     }
                 } else if matches!(app.dialogue.current, Dialogue::Info(_)) ||
                     matches!(app.input.step, InputStep::Template){
                     app.dialogue.current = Dialogue::Info(String::new());
                     app.update_loading(String::from("Timed out, Loading local templates..."));
-                    app.capture_input = false;
                 }
             }
 
+            if let Some(ref task) = app.tasks.proj_create {
+                if let Some(result) = task.poll() {
+                    app.tasks.proj_create = None;
+                    match result {
+                        Ok(_) => {
+                            app.dialogue.return_to = Dialogue::None;
+                            if app.open_after_creation && app.tasks.proj_open.is_none() {
+                                if let Some(project) = app.dialogue.selected_project.clone() {
+                                    if let Some(unity) = &app.unity {
+                                        let uclone = unity.clone();
+                                        app.dialogue.current = Dialogue::Info(String::new());
+                                        app.tasks.proj_open = Some(AsyncTask::new(move || {
+                                            uclone.open_project(&project)
+                                        }));
+                                    }
+                                }
+                            }
+                            else {
+                                app.dialogue.current = Dialogue::Confirm("Project created successfully!".to_string());
+                            }
+                        }
+                        Err(err) => {
+                            app.dialogue.current = Dialogue::Error(err.to_string());
+                        }
+                    }
+                    app.input.step = InputStep::Name;
+                } else if matches!(app.dialogue.current, Dialogue::Info(_)) ||
+                    matches!(app.input.step, InputStep::Complete){
+                    app.dialogue.current = Dialogue::Info(String::new());
+                    app.update_loading(format!("Creating project... (O)pen: {}", app.open_after_creation));
+                }
+            }
+
+            if let Some(ref task) = app.tasks.proj_open {
+                if let Some(result) = task.poll() {
+                    app.tasks.proj_open = None;
+                    match result {
+                        Ok(_) => {
+                            app.dialogue.return_to = Dialogue::None;
+                        }
+                        Err(err) => {
+                            app.dialogue.current = Dialogue::Error(err.to_string());
+                        }
+                    }
+                } else if matches!(app.dialogue.current, Dialogue::Info(_)) {
+                    app.update_loading("Opening project...".to_string());
+                }
+            }
+
+            if let Some(ref task) = app.tasks.proj_delete {
+                if let Some(result) = task.poll() {
+                    app.tasks.proj_delete = None;
+                    match result {
+                        Ok(_) => {
+                            app.dialogue.return_to = Dialogue::None;
+                            app.dialogue.current = Dialogue::Confirm("Project deleted successfully!".to_string());
+                            app.refresh();
+                        }
+                        Err(err) => {
+                            app.dialogue.current = Dialogue::Error(err.to_string());
+                        }
+                    }
+                } else if matches!(app.dialogue.current, Dialogue::Info(_)) {
+                    app.update_loading(String::from("Loading projects..."));
+                }
+            }
 
             if event::poll(Duration::from_millis(FRAME_DELTA))? {
                 if let Some(key) = event::read()?.as_key_press_event() {
@@ -216,13 +274,17 @@ impl App {
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> bool {
-        if !self.capture_input { return false; }
         match self.dialogue.current {
             Dialogue::None => self.handle_main_key(key),
             Dialogue::Input => self.handle_input_key(key),
             Dialogue::DeleteConfirm { .. } | 
-                Dialogue::Error(_) |
-                Dialogue::Info(_) => self.handle_dialogue_key(key),
+                Dialogue::Error(_) | Dialogue::Confirm(_) => self.handle_dialogue_key(key),
+            Dialogue::Info(_) => {
+                if key.code == KeyCode::Char('o') {
+                    self.open_after_creation = !self.open_after_creation;
+                }
+                false
+            },
         }
     }
 
@@ -426,16 +488,16 @@ impl App {
     }
 
     fn finish_create(&mut self) {
-        if let (Some(unity), Some(project)) = (&self.unity, &self.dialogue.selected_project) {
-            if let Err(err) = unity.create_project(project) {
-                self.dialogue.show_error(err.to_string());
-                self.input.step = InputStep::Name;
-                return;
+        if let Some(project) = self.dialogue.selected_project.clone() {
+            if self.tasks.proj_create.is_none() {
+                if let Some(unity) = &self.unity {
+                    let uclone = unity.clone();
+                    self.tasks.proj_create = Some(AsyncTask::new(move || {
+                        uclone.create_project(&project)
+                    }));
+                }
             }
         }
-
-        self.reset_after_dialogue();
-        self.refresh();
     }
 
     pub fn execute_selection(&mut self) {
@@ -451,9 +513,7 @@ impl App {
                     self.dialogue.current = self.dialogue.return_to.clone();
                     return; 
                 }
-                self.tasks.projects = None;
-                self.tasks.editors = None;
-                self.tasks.templates = None;
+                self.clear_tasks();
                 self.reset_after_dialogue();
                 self.input.submit_message();
                 self.refresh();
@@ -461,9 +521,7 @@ impl App {
             Dialogue::Input => {
                 if self.dialogue.selection == DialogueSelection::Cancel {
                     if self.dialogue.return_to == Dialogue::None { 
-                        self.tasks.projects = None;
-                        self.tasks.editors = None;
-                        self.tasks.templates = None;
+                        self.clear_tasks();
                     }
                     self.reset_after_dialogue();
                     self.input.submit_message();
@@ -471,23 +529,44 @@ impl App {
                     return;
                 }
 
-                if self.input.value.is_empty() {
+                if self.input.value.is_empty() && !matches!(self.input.step, InputStep::Template) {
                     self.dialogue.return_to = self.dialogue.current.clone();
                     self.dialogue.current = Dialogue::Error("No input!".to_string());
+                    return;
+                }
+
+                if self.input.buff.is_empty() && matches!(self.input.step, InputStep::Template) {
+                    self.dialogue.return_to = self.dialogue.current.clone();
+                    self.dialogue.current = Dialogue::Error("No selection!".to_string());
                     return;
                 }
 
                 if !self.advance_create_step() {
                     return;
                 }
+
                 self.input.submit_message();
+                self.list_state.select(None);
                 if self.input.step == InputStep::Complete {
                     self.finish_create();
                 }
             }
             Dialogue::Error(_) | Dialogue::Info(_) => self.reset_after_dialogue(),
+            Dialogue::Confirm(_) => {
+                self.reset_after_dialogue(); 
+                self.refresh();
+            },
             Dialogue::None => {}
         }
+    }
+
+    fn clear_tasks(&mut self) {
+        self.tasks.projects = None;
+        self.tasks.editors = None;
+        self.tasks.templates = None;
+        self.tasks.proj_open = None;
+        self.tasks.proj_create = None;
+        self.tasks.proj_delete = None;
     }
 
     fn advance_create_step(&mut self) -> bool {
@@ -503,6 +582,17 @@ impl App {
             InputStep::Path => {
                 let path = self.input.value.clone();
                 if let Some(project) = self.dialogue.selected_project.as_mut() {
+                    if let contents = dir_contents(&path) {
+                        if contents.contains(&project.name) {
+                            self.dialogue.return_to = Dialogue::Input;
+                            self.dialogue.current = 
+                                Dialogue::Error("Project already exists at path!".to_string());
+                            self.input.step = InputStep::Name;
+                            self.input.submit_message();
+                            return false;
+                        }
+                    }
+                    // BUG: we never actually verify the path!
                     project.path = path;
                 }
                 self.input.step = InputStep::Version;
@@ -529,14 +619,11 @@ impl App {
                     (self.templates.as_ref(), self.list_state.selected())
                 {
                     let names: Vec<String> = templates.iter().map(|t| t.name.clone()).collect();
-                    if let Some(value) = names.get(index).cloned() {
-                        self.input.set_text(value);
-                        if !names.contains(&self.input.value) {
-                            return false;
-                        }
+                    if !names.contains(&self.input.buff) {
+                        return false;
                     }
                 }
-                let template = self.input.value.clone();
+                let template = self.input.buff.clone();
                 if let Some(project) = self.dialogue.selected_project.as_mut() {
                     project.template = template;
                 }
@@ -591,18 +678,29 @@ impl App {
             self.list_state.select_previous();
         }
 
-        if self.input.step == InputStep::Version {
-            if let (Some(versions), Some(index)) =
-                (self.editor_versions.as_ref(), self.list_state.selected())
-            {
-                if let Some(value) = versions.get(index) {
-                    self.input.set_text(value.trim());
+        match self.input.step {
+            InputStep::Version => {
+                if let Some(index) = self.list_state.selected()
+                {
+                    if let Some(value) = self.list_items.get(index) {
+                        self.input.set_text(value.trim());
+                    }
                 }
-            }
+            },
+            InputStep::Template => {
+                if let (Some(templates), Some(index)) = (&self.templates, self.list_state.selected()) {
+                    let t_str: Vec<String> = templates.iter().map(|t| t.name.clone() as String).collect();
+                    if let Some(value) = t_str.get(index).cloned() {
+                        self.input.set_buffer(value.trim());
+                    }
+                }
+            },
+            _ => ()
         }
     }
 
     fn open_create_dialogue(&mut self) {
+        self.open_after_creation = false;
         self.selected_index = self.list_state.selected();
         self.list_state.select(None);
         self.dialogue.current = Dialogue::Input;
@@ -639,11 +737,17 @@ impl App {
         let Some(index) = self.list_state.selected() else {
             return;
         };
-        let Some(project) = self.projects.get(index) else {
+        let Some(project) = self.projects.get(index).cloned() else {
             return;
         };
-        if let Some(unity) = &self.unity {
-            let _ = unity.open_project(project);
+
+        if self.tasks.proj_create.is_none() {
+            if let Some(unity) = &self.unity {
+                let uclone = unity.clone();
+                self.tasks.proj_open = Some(AsyncTask::new(move || {
+                    uclone.open_project(&project)
+                }));
+            }
         }
     }
 
@@ -651,10 +755,16 @@ impl App {
         let Some(project) = self.dialogue.selected_project.clone() else {
             return;
         };
-        if let Some(unity) = &self.unity {
-            let _ = unity.delete_project(&project, with_dir);
+
+        if self.tasks.proj_delete.is_none() {
+            if let Some(unity) = &self.unity {
+                let uclone = unity.clone();
+                self.dialogue.current = Dialogue::Info(String::new());
+                self.tasks.proj_delete = Some(AsyncTask::new(move || {
+                    uclone.delete_project(&project, with_dir)
+                }));
+            }
         }
-        self.refresh();
     }
 
     fn toggle_project_details(&mut self) {

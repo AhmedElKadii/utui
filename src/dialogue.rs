@@ -7,7 +7,8 @@ pub enum Dialogue {
     DeleteConfirm { with_dir: bool },
     Input,
     Error(String),
-    Info(String)
+    Info(String),
+    Confirm(String)
 }
 
 #[derive(Default, PartialEq)]

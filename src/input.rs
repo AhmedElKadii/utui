@@ -19,16 +19,18 @@ pub enum InputStep {
 #[derive(Default)]
 pub struct InputHandler {
     pub value: String,
+    pub buff: String,
     pub character_index: usize,
     pub step: InputStep,
-    list_line_offset: usize,
-    last_selected_idx: Option<usize>
+    pub list_line_offset: usize,
+    pub last_selected_idx: Option<usize>
 }
 
 impl InputHandler {
     pub const fn new() -> Self {
         Self {
             value: String::new(),
+            buff: String::new(),
             character_index: 0,
             step: InputStep::Name,
             list_line_offset: 0,
@@ -91,6 +93,10 @@ impl InputHandler {
     pub fn set_text(&mut self, text: impl Into<String>) {
         self.value = text.into();
         self.character_index = self.value.chars().count();
+    }
+
+    pub fn set_buffer(&mut self, text: impl Into<String>) {
+        self.buff = text.into();
     }
 
     pub fn render_input_box(&mut self, frame: &mut Frame, title_message: &str, list_data: Option<(&mut ListState, Vec<String>)>) {
