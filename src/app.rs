@@ -3,10 +3,12 @@ use arboard::Clipboard;
 use crossterm::event::{self, KeyCode, KeyEvent, KeyModifiers};
 use ratatui::widgets::ListState;
 use rust_fuzzy_search::fuzzy_search_threshold;
+use std::thread::sleep;
 use std::{default, fs};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use std::sync::Arc;
 
+use crate::dialogue::Dialogue::TimedInfo;
 use crate::dialogue::{Dialogue, DialogueSelection, DialogueState};
 use crate::error::AppError;
 use crate::input::{InputHandler, InputStep};
@@ -202,7 +204,11 @@ impl App {
                                 }
                             }
                             else {
-                                app.dialogue.current = Dialogue::Confirm("Project created successfully!".to_string());
+                                app.dialogue.current = 
+                                    Dialogue::TimedInfo(
+                                        "Project created successfully!".to_string(),
+                                        Instant::now() + Duration::from_secs(3)
+                                    );
                             }
                         }
                         Err(err) => {
@@ -247,7 +253,14 @@ impl App {
                         }
                     }
                 } else if matches!(app.dialogue.current, Dialogue::Info(_)) {
-                    app.update_loading(String::from("Loading projects..."));
+                    app.update_loading(String::from("Deleting project..."));
+                }
+            }
+
+            if let Dialogue::TimedInfo(_, end_time) = app.dialogue.current {
+                if Instant::now() >= end_time {
+                    app.dialogue.current = Dialogue::None;
+                    app.refresh();
                 }
             }
 
@@ -285,6 +298,10 @@ impl App {
                 }
                 false
             },
+            Dialogue::TimedInfo(_, _) => {
+                self.dialogue.current = Dialogue::None;
+                false
+            }
         }
     }
 
@@ -506,7 +523,6 @@ impl App {
                 if self.dialogue.selection == DialogueSelection::Ok {
                     self.delete_selected(with_dir);
                 }
-                self.reset_after_dialogue();
             }
             Dialogue::Error(_) | Dialogue::Info(_) => {
                 if self.dialogue.return_to != Dialogue::None { 
@@ -551,7 +567,8 @@ impl App {
                     self.finish_create();
                 }
             }
-            Dialogue::Error(_) | Dialogue::Info(_) => self.reset_after_dialogue(),
+            Dialogue::Error(_) | Dialogue::Info(_) |
+                Dialogue::TimedInfo(_, _) => self.reset_after_dialogue(),
             Dialogue::Confirm(_) => {
                 self.reset_after_dialogue(); 
                 self.refresh();

@@ -52,6 +52,9 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         Dialogue::Info(message) => {
             popup_dialogue(app, frame, "Info", message, None, None);
         }
+        Dialogue::TimedInfo(message, _) => {
+            popup_dialogue(app, frame, "Info", message, None, None);
+        }
         Dialogue::Confirm(message) => {
             popup_dialogue(app, frame, "Info", message, Some("CONFIRM"), None);
         }
@@ -99,7 +102,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
             } else if app.list_items.is_empty() {
                 let empty = Line::from_iter([
                     Span::from(" No projects available...").bold(),
-                    Span::from(" press c to create a project or add an existing one."),
+                    Span::from(" press c to create a project."),
                 ]);
                 frame.render_widget(empty.left_aligned(), middle);
             } else {

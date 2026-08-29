@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use crate::project::Project;
 
 #[derive(Clone, Default, PartialEq)]
@@ -8,6 +10,7 @@ pub enum Dialogue {
     Input,
     Error(String),
     Info(String),
+    TimedInfo(String, Instant),
     Confirm(String)
 }
 
