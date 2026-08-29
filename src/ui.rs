@@ -4,7 +4,7 @@ use ratatui::style::{Color, Modifier, Stylize};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear, List, ListState, Padding, Paragraph, Wrap};
 
-use crate::app::App;
+use crate::app::{App, fuzzy_filter_sorted};
 use crate::config;
 use crate::dialogue::{Dialogue, DialogueSelection};
 use crate::input::InputStep;
@@ -47,7 +47,16 @@ pub fn render(frame: &mut Frame, app: &mut App) {
             }
         }
         Dialogue::Error(message) => {
-            popup_dialogue(app, frame, "Error", message, Some("OK"), None);
+            popup_dialogue(app, frame, "Error", message, Some("CONFIRM"), None);
+        }
+        Dialogue::Info(message) => {
+            popup_dialogue(app, frame, "Info", message, None, None);
+        }
+        Dialogue::TimedInfo(message, _) => {
+            popup_dialogue(app, frame, "Info", message, None, None);
+        }
+        Dialogue::Confirm(message) => {
+            popup_dialogue(app, frame, "Info", message, Some("CONFIRM"), None);
         }
         Dialogue::Input => match app.input.step {
             InputStep::Name => {
@@ -62,28 +71,38 @@ pub fn render(frame: &mut Frame, app: &mut App) {
                 );
             }
             InputStep::Version => {
-                let items = app.list_items.clone();
-                app.input.render_input_box(
-                    frame,
-                    "Editor Version",
-                    Some((&mut app.list_state, items)),
-                );
+                if let Some(versions) = app.editor_versions.clone() {
+                    app.list_items = fuzzy_filter_sorted(&app.input.value, versions);
+                    app.input.render_input_box(
+                        frame,
+                        "Editor Version",
+                        Some((&mut app.list_state, app.list_items.clone())),
+                    );
+                } else {
+                    app.dialogue.current = Dialogue::Error("No editors available...".to_string());
+                }
             }
             InputStep::Template => {
-                let labels = app.template_labels();
-                app.input.render_input_box(
-                    frame,
-                    "Project Template",
-                    Some((&mut app.list_state, labels)),
-                );
+                if app.templates.is_some() {
+                    let labels = app.template_labels();
+                    app.input.render_input_box(
+                        frame,
+                        "Project Template",
+                        Some((&mut app.list_state, labels)),
+                    );
+                } else {
+                    app.dialogue.current = Dialogue::Error("No templates found...".to_string());
+                }
             }
             _ => {}
         },
         Dialogue::None => {
-            if app.list_items.is_empty() {
+            if app.tasks.projects.is_some() {
+                app.dialogue.current = Dialogue::Info(String::new());
+            } else if app.list_items.is_empty() {
                 let empty = Line::from_iter([
                     Span::from(" No projects available...").bold(),
-                    Span::from(" press c to create a project or a to add an existing one."),
+                    Span::from(" press c to create a project."),
                 ]);
                 frame.render_widget(empty.left_aligned(), middle);
             } else {
@@ -92,7 +111,9 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         }
     }
 
-    render_help_text(frame, bottom);
+    if matches!(app.dialogue.current, Dialogue::None) {
+        render_help_text(frame, bottom);
+    }
 }
 
 fn popup_dialogue(
@@ -105,13 +126,15 @@ fn popup_dialogue(
 ) {
     let area = frame.area();
     const MIN_WIDTH: u16 = 45;
-    const MIN_HEIGHT: u16 = 9;
+    
+    let has_buttons = ok_label.is_some() || cancel_label.is_some();
+    let min_height: u16 = if has_buttons { 9 } else { 5 };
 
     let popup_width = ((area.width as f32 * 0.25) as u16)
         .max(MIN_WIDTH)
         .min(area.width);
     let popup_height = ((area.height as f32 * 0.18) as u16)
-        .max(MIN_HEIGHT)
+        .max(min_height)
         .min(area.height);
 
     let centered_area = area.centered(
@@ -124,54 +147,66 @@ fn popup_dialogue(
     let inner_area = popup_block.inner(centered_area);
     frame.render_widget(popup_block, centered_area);
 
-    let chunks = Layout::vertical([
-        Constraint::Length(1),
-        Constraint::Fill(1),
-        Constraint::Length(1),
-        Constraint::Length(3),
-    ])
-    .split(inner_area);
+    let constraints = if has_buttons {
+        vec![
+            Constraint::Length(1),
+            Constraint::Fill(1),
+            Constraint::Length(1),
+            Constraint::Length(3),
+        ]
+    } else {
+        vec![
+            Constraint::Fill(1),
+            Constraint::Length(1),
+            Constraint::Fill(1),
+        ]
+    };
+
+    let chunks = Layout::vertical(constraints).split(inner_area);
+    let text_chunk = if has_buttons { chunks[1] } else { chunks[1] };
 
     let paragraph = Paragraph::new(message.to_string())
         .block(Block::new().padding(Padding::horizontal(1)))
         .wrap(Wrap { trim: true })
         .alignment(Alignment::Center);
-    frame.render_widget(paragraph, chunks[1]);
+    frame.render_widget(paragraph, text_chunk);
 
-    let button_chunks = Layout::horizontal([
-        Constraint::Fill(1),
-        Constraint::Length(ok_label.map_or(0, |s| s.chars().count() as u16 + 4)),
-        Constraint::Length(2),
-        Constraint::Length(cancel_label.map_or(0, |s| s.chars().count() as u16 + 4)),
-        Constraint::Fill(1),
-    ])
-    .split(chunks[3]);
+    if has_buttons {
+        let button_chunks = Layout::horizontal([
+            Constraint::Fill(1),
+            Constraint::Length(ok_label.map_or(0, |s| s.chars().count() as u16 + 4)),
+            Constraint::Length(2),
+            Constraint::Length(cancel_label.map_or(0, |s| s.chars().count() as u16 + 4)),
+            Constraint::Fill(1),
+        ])
+        .split(chunks[3]);
 
-    let ok_style = if app.dialogue.selection == DialogueSelection::Ok {
-        Modifier::REVERSED
-    } else {
-        Modifier::empty()
-    };
-    let cancel_style = if app.dialogue.selection == DialogueSelection::Cancel {
-        Modifier::REVERSED
-    } else {
-        Modifier::empty()
-    };
+        let ok_style = if app.dialogue.selection == DialogueSelection::Ok {
+            Modifier::REVERSED
+        } else {
+            Modifier::empty()
+        };
+        let cancel_style = if app.dialogue.selection == DialogueSelection::Cancel {
+            Modifier::REVERSED
+        } else {
+            Modifier::empty()
+        };
 
-    if let Some(label) = ok_label {
-        let ok_btn = Paragraph::new(label)
-            .block(Block::bordered().padding(Padding::horizontal(1)))
-            .style(ok_style)
-            .alignment(Alignment::Center);
-        frame.render_widget(ok_btn, button_chunks[1]);
-    }
+        if let Some(label) = ok_label {
+            let ok_btn = Paragraph::new(label)
+                .block(Block::bordered().padding(Padding::horizontal(1)))
+                .style(ok_style)
+                .alignment(Alignment::Center);
+            frame.render_widget(ok_btn, button_chunks[1]);
+        }
 
-    if let Some(label) = cancel_label {
-        let cancel_btn = Paragraph::new(label)
-            .block(Block::bordered().padding(Padding::horizontal(1)))
-            .style(cancel_style)
-            .alignment(Alignment::Center);
-        frame.render_widget(cancel_btn, button_chunks[3]);
+        if let Some(label) = cancel_label {
+            let cancel_btn = Paragraph::new(label)
+                .block(Block::bordered().padding(Padding::horizontal(1)))
+                .style(cancel_style)
+                .alignment(Alignment::Center);
+            frame.render_widget(cancel_btn, button_chunks[3]);
+        }
     }
 }
 

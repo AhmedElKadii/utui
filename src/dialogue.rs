@@ -1,18 +1,23 @@
+use std::time::Instant;
+
 use crate::project::Project;
 
-#[derive(Default, PartialEq)]
+#[derive(Clone, Default, PartialEq)]
 pub enum Dialogue {
     #[default]
     None,
     DeleteConfirm { with_dir: bool },
     Input,
     Error(String),
+    Info(String),
+    TimedInfo(String, Instant),
+    Confirm(String)
 }
 
 #[derive(Default, PartialEq)]
 pub enum DialogueSelection {
-    None,
     #[default]
+    None,
     Ok,
     Cancel,
 }
@@ -20,6 +25,7 @@ pub enum DialogueSelection {
 #[derive(Default)]
 pub struct DialogueState {
     pub current: Dialogue,
+    pub return_to: Dialogue,
     pub selection: DialogueSelection,
     pub selected_project: Option<Project>,
 }

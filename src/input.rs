@@ -18,17 +18,19 @@ pub enum InputStep {
 
 #[derive(Default)]
 pub struct InputHandler {
-    pub input: String,
+    pub value: String,
+    pub buff: String,
     pub character_index: usize,
     pub step: InputStep,
-    list_line_offset: usize,
-    last_selected_idx: Option<usize>
+    pub list_line_offset: usize,
+    pub last_selected_idx: Option<usize>
 }
 
 impl InputHandler {
     pub const fn new() -> Self {
         Self {
-            input: String::new(),
+            value: String::new(),
+            buff: String::new(),
             character_index: 0,
             step: InputStep::Name,
             list_line_offset: 0,
@@ -48,16 +50,16 @@ impl InputHandler {
 
     pub fn enter_char(&mut self, new_char: char) {
         let index = self.byte_index();
-        self.input.insert(index, new_char);
+        self.value.insert(index, new_char);
         self.move_cursor_right();
     }
 
     pub fn byte_index(&self) -> usize {
-        self.input
+        self.value
             .char_indices()
             .map(|(i, _)| i)
             .nth(self.character_index)
-            .unwrap_or(self.input.len())
+            .unwrap_or(self.value.len())
     }
 
     pub fn delete_char(&mut self) {
@@ -67,16 +69,16 @@ impl InputHandler {
             let current_index = self.character_index;
             let from_left_to_current_index = current_index - 1;
 
-            let before_char_to_delete = self.input.chars().take(from_left_to_current_index);
-            let after_char_to_delete = self.input.chars().skip(current_index);
+            let before_char_to_delete = self.value.chars().take(from_left_to_current_index);
+            let after_char_to_delete = self.value.chars().skip(current_index);
 
-            self.input = before_char_to_delete.chain(after_char_to_delete).collect();
+            self.value = before_char_to_delete.chain(after_char_to_delete).collect();
             self.move_cursor_left();
         }
     }
 
     pub fn clamp_cursor(&self, new_cursor_pos: usize) -> usize {
-        new_cursor_pos.clamp(0, self.input.chars().count())
+        new_cursor_pos.clamp(0, self.value.chars().count())
     }
 
     pub const fn reset_cursor(&mut self) {
@@ -84,13 +86,17 @@ impl InputHandler {
     }
 
     pub fn submit_message(&mut self) {
-        self.input.clear();
+        self.value.clear();
         self.reset_cursor();
     }
 
     pub fn set_text(&mut self, text: impl Into<String>) {
-        self.input = text.into();
-        self.character_index = self.input.chars().count();
+        self.value = text.into();
+        self.character_index = self.value.chars().count();
+    }
+
+    pub fn set_buffer(&mut self, text: impl Into<String>) {
+        self.buff = text.into();
     }
 
     pub fn render_input_box(&mut self, frame: &mut Frame, title_message: &str, list_data: Option<(&mut ListState, Vec<String>)>) {
@@ -135,7 +141,7 @@ impl InputHandler {
             0
         };
 
-        let input = Paragraph::new(self.input.as_str())
+        let input = Paragraph::new(self.value.as_str())
             .style(Style::default().fg(Color::Yellow))
             .block(Block::bordered().title(title_message))
             .scroll((0, input_scroll_offset as u16));

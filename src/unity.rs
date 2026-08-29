@@ -1,5 +1,4 @@
 use serde_json::Value;
-
 use crate::command::run_command;
 use crate::error::AppError;
 use crate::project::Project;
@@ -16,13 +15,9 @@ impl UnityCLI {
                 binary: path.trim().to_string(),
             }),
             Ok((false, err)) => {
-                eprintln!("{err}");
                 Err(AppError::Unity(err))
             }
-            Err(err) => {
-                eprintln!("{err}");
-                Err(err.into())
-            }
+            Err(err) => Err(err.into()),
         }
     }
 
@@ -53,26 +48,53 @@ impl UnityCLI {
         Ok(data.iter().map(Template::from_json).collect())
     }
 
+    pub fn list_offline_templates(&self, editor_version: &str) -> Result<Vec<Template>, AppError> {
+        let editor_arg = format!("--editor={editor_version}");
+        let json = self.invoke(&["templates", "list", &editor_arg, "--installed", "--json"])?;
+        let data = json_data_array(&json)?;
+        Ok(data.iter().map(Template::from_json).collect())
+    }
+
     pub fn open_project(&self, project: &Project) -> Result<(), AppError> {
-        let output = self.raw(&["p", "open", &project.path])?;
-        match parse_cli_response(&output) {
-            Ok(true) => println!("Project opened successfully"),
-            Ok(false) | Err(_) => {}
-        }
+        let output_result = self.raw(&["p", "open", &project.path]);
+
+        let message_text = match output_result {
+            Ok(stdout_string) => stdout_string,
+            Err(app_error) => {
+                let err_string = app_error.to_string();
+                if err_string.is_empty() {
+                    "".to_string()
+                } else {
+                    err_string
+                }
+            }
+        };
+
+        parse_cli_response(&message_text)?;
+
         Ok(())
     }
 
     pub fn delete_project(&self, project: &Project, remove_files: bool) -> Result<(), AppError> {
-        let output = self.raw(&["p", "remove", "-f", "--json", &project.path])?;
-        if !matches!(parse_cli_response(&output), Ok(true)) {
-            return Ok(());
-        }
+        let output_result = self.raw(&["p", "remove", "-f", &project.path, "--json"]);
+
+        let message_text = match output_result {
+            Ok(stdout_string) => stdout_string,
+            Err(app_error) => {
+                let err_string = app_error.to_string();
+                if err_string.is_empty() {
+                    "".to_string()
+                } else {
+                    err_string
+                }
+            }
+        };
+
+        parse_cli_response(&message_text)?;
 
         if remove_files {
-            match run_command("rm", &["-r", "-f", &project.path]) {
-                Ok((true, _)) => println!("project deleted successfully"),
-                Ok((false, err)) => eprintln!("{err}"),
-                Err(err) => eprintln!("{err}"),
+            if let Err(err) = run_command("rm", &["-r", "-f", &project.path]) {
+                return Err(AppError::Command(err));
             }
         }
 
@@ -84,7 +106,7 @@ impl UnityCLI {
         let template_arg = format!("--template={}", project.template);
         let path_arg = format!("--path={}", project.path);
 
-        match self.raw(&[
+        let output = self.raw(&[
             "p",
             "create",
             &project.name,
@@ -92,13 +114,10 @@ impl UnityCLI {
             &template_arg,
             &path_arg,
             "--json",
-        ]) {
-            Ok(_) => {
-                println!("Project created successfully");
-                Ok(())
-            }
-            Err(err) => Err(err),
-        }
+        ])?;
+        
+        parse_cli_response(&output)?;
+        Ok(())
     }
 
     fn invoke(&self, args: &[&str]) -> Result<Value, AppError> {
@@ -109,14 +128,8 @@ impl UnityCLI {
     fn raw(&self, args: &[&str]) -> Result<String, AppError> {
         match run_command(&self.binary, args) {
             Ok((true, stdout)) => Ok(stdout),
-            Ok((false, err)) => {
-                eprintln!("{err}");
-                Err(AppError::Unity(err))
-            }
-            Err(err) => {
-                eprintln!("{err}");
-                Err(err.into())
-            }
+            Ok((false, err)) => Err(AppError::Unity(err)),
+            Err(err) => Err(err.into()),
         }
     }
 }
@@ -124,29 +137,30 @@ impl UnityCLI {
 fn json_data_array(value: &Value) -> Result<&Vec<Value>, AppError> {
     match value.get("data").and_then(Value::as_array) {
         Some(data) => Ok(data),
-        None => {
-            eprintln!("Failed to fetch json array");
-            Err(AppError::Parse("Failed to fetch json array".into()))
-        }
+        None => Err(AppError::Parse("Failed to fetch json array".into())),
     }
 }
 
-fn parse_cli_response(message: &str) -> Result<bool, AppError> {
-    let json: Value = serde_json::from_str(message).map_err(|_| {
-        AppError::Parse("Failed to load json".into())
-    })?;
+fn parse_cli_response(message: &str) -> Result<(), AppError> {
+    let trimmed = message.trim();
+    if trimmed.is_empty() {
+        return Ok(());
+    }
+
+    let json: Value = match serde_json::from_str(trimmed) {
+        Ok(val) => val,
+        Err(_) => return Ok(()), 
+    };
 
     match json.get("success").and_then(Value::as_bool) {
-        Some(true) => Ok(true),
         Some(false) => {
-            if json.get("data").and_then(Value::as_array).is_some() {
-                if let Some(err) = json.get("error").and_then(Value::as_str) {
-                    eprintln!("{err}");
-                    return Ok(false);
+            if let Some(err_str) = json.get("error").and_then(Value::as_str) {
+                if !err_str.trim().is_empty() {
+                    return Err(AppError::Parse(err_str.to_string()));
                 }
             }
-            Err(AppError::Parse("Failed to get response".into()))
+            Ok(())
         }
-        None => Err(AppError::Parse("Failed to get response".into())),
+        _ => Ok(()), 
     }
 }
