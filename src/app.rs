@@ -193,22 +193,22 @@ impl App {
                         Ok(_) => {
                             app.dialogue.return_to = Dialogue::None;
                             if app.open_after_creation && app.tasks.proj_open.is_none() {
-                                if let Some(project) = app.dialogue.selected_project.clone() {
+                                if let Some(mut project) = app.dialogue.selected_project.clone() {
                                     if let Some(unity) = &app.unity {
                                         let uclone = unity.clone();
                                         app.dialogue.current = Dialogue::Info(String::new());
                                         app.tasks.proj_open = Some(AsyncTask::new(move || {
+                                            project.path = format!("{}/{}", project.path, project.name);
                                             uclone.open_project(&project)
                                         }));
                                     }
                                 }
                             }
                             else {
-                                app.dialogue.current = 
-                                    Dialogue::TimedInfo(
-                                        "Project created successfully!".to_string(),
-                                        Instant::now() + Duration::from_secs(3)
-                                    );
+                                app.dialogue.current = Dialogue::TimedInfo(
+                                    String::from("Project created successfully!"),
+                                    Instant::now() + Duration::from_secs(3)
+                                );
                             }
                         }
                         Err(err) => {
@@ -228,7 +228,10 @@ impl App {
                     app.tasks.proj_open = None;
                     match result {
                         Ok(_) => {
-                            app.dialogue.return_to = Dialogue::None;
+                            app.dialogue.current = Dialogue::TimedInfo(
+                                String::from("Project opened successfully!"),
+                                Instant::now() + Duration::from_secs(3)
+                            );
                         }
                         Err(err) => {
                             app.dialogue.current = Dialogue::Error(err.to_string());
@@ -244,12 +247,13 @@ impl App {
                     app.tasks.proj_delete = None;
                     match result {
                         Ok(_) => {
-                            app.dialogue.return_to = Dialogue::None;
-                            app.dialogue.current = Dialogue::Confirm("Project deleted successfully!".to_string());
-                            app.refresh();
+                            app.dialogue.current = Dialogue::TimedInfo(
+                                String::from("Project deleted successfully!"),
+                                Instant::now() + Duration::from_secs(3)
+                            );
                         }
-                        Err(err) => {
-                            app.dialogue.current = Dialogue::Error(err.to_string());
+                        Err(_) => {
+                            app.dialogue.current = Dialogue::Error(String::from("Failed to delete..."));
                         }
                     }
                 } else if matches!(app.dialogue.current, Dialogue::Info(_)) {
@@ -300,6 +304,9 @@ impl App {
             },
             Dialogue::TimedInfo(_, _) => {
                 self.dialogue.current = Dialogue::None;
+                if matches!(self.dialogue.return_to, Dialogue::None) {
+                    self.refresh();
+                }
                 false
             }
         }
@@ -322,6 +329,7 @@ impl App {
             KeyCode::Char('d') => self.open_delete_dialogue(false),
             KeyCode::Char('o') => self.open_selected_project(),
             KeyCode::Char('c') => self.open_create_dialogue(),
+            KeyCode::Char('r') => self.refresh(),
             KeyCode::Esc => self.collapse_project(),
             KeyCode::Char('q') => return true,
             _ => {}
@@ -758,7 +766,7 @@ impl App {
             return;
         };
 
-        if self.tasks.proj_create.is_none() {
+        if self.tasks.proj_open.is_none() {
             if let Some(unity) = &self.unity {
                 let uclone = unity.clone();
                 self.tasks.proj_open = Some(AsyncTask::new(move || {
