@@ -61,6 +61,9 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         Dialogue::Confirm(message) => {
             popup_dialogue(app, frame, "Info", message, Some("CONFIRM"), None);
         }
+        Dialogue::ConfirmAction(message, _) => {
+            popup_dialogue(app, frame, "Info", message, Some("CONFIRM"), Some("CANCEL"));
+        }
         Dialogue::Input => match app.input.step {
             InputStep::Name => {
                 app.input.render_input_box(frame, "Project Name", None);
@@ -115,7 +118,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
     }
 
     if matches!(app.dialogue.current, Dialogue::None) {
-        render_help_text(frame, bottom);
+        render_help_text(frame, bottom, app.username.clone());
     }
 }
 
@@ -239,16 +242,23 @@ fn render_list(frame: &mut Frame, area: Rect, list_state: &mut ListState, list_i
     frame.render_stateful_widget(list, area, list_state);
 }
 
-fn render_help_text(frame: &mut Frame, area: Rect) {
+fn render_help_text(frame: &mut Frame, area: Rect, username: String) {
     let title = Line::from_iter([
-        Span::from("RET - Expand | ").bold(),
-        Span::from("o - Open | ").bold(),
-        Span::from("d - Delete | ").bold(),
-        Span::from("D - Delete with Dir | ").bold(),
-        Span::from("c - Create | ").bold(),
-        Span::from("j/Ctrl-n - Next | ").bold(),
-        Span::from("k/Ctrl-p - Prev | ").bold(),
-        Span::from("q - Quit").bold(),
+        Span::from(
+            if username.is_empty() {
+                String::from("[Not Logged In]")
+            }
+            else {
+                format!("[Logged In: {}]", username)
+            }
+        ).bold(),
+        // Span::from("| o - Open | ").bold(),
+        // Span::from("d - Delete | ").bold(),
+        // Span::from("D - Delete with Dir | ").bold(),
+        // Span::from("c - Create | ").bold(),
+        // Span::from("j/Ctrl-n - Next | ").bold(),
+        // Span::from("k/Ctrl-p - Prev | ").bold(),
+        // Span::from("q - Quit").bold(),
     ]);
     frame.render_widget(title.centered(), area);
 }
