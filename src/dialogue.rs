@@ -2,6 +2,13 @@ use std::time::Instant;
 
 use crate::project::Project;
 
+#[derive(Clone, Copy, Default, PartialEq)]
+pub enum Action {
+    #[default]
+    None,
+    Login
+}
+
 #[derive(Clone, Default, PartialEq)]
 pub enum Dialogue {
     #[default]
@@ -12,7 +19,8 @@ pub enum Dialogue {
     Info(String),
     TimedInfo(String, Instant),
     Panic(String),
-    Confirm(String)
+    Confirm(String),
+    ConfirmAction(String, Action)
 }
 
 #[derive(Default, PartialEq)]

@@ -2,6 +2,7 @@
 use arboard::Clipboard;
 use crossterm::event::{self, KeyCode, KeyEvent, KeyModifiers};
 use ratatui::widgets::ListState;
+use rayon::iter::walk_tree;
 use rust_fuzzy_search::fuzzy_search_threshold;
 use std::thread::sleep;
 use std::{default, fs};
@@ -9,13 +10,13 @@ use std::time::{Duration, Instant};
 use std::sync::Arc;
 
 use crate::dialogue::Dialogue::TimedInfo;
-use crate::dialogue::{Dialogue, DialogueSelection, DialogueState};
+use crate::dialogue::{Action, Dialogue, DialogueSelection, DialogueState};
 use crate::error::AppError;
 use crate::input::{InputHandler, InputStep};
 use crate::project::Project;
 use crate::template::Template;
 use crate::unity::UnityCLI;
-use crate::threading::AsyncTask;
+use crate::threading::{AsyncTask, poll_task};
 
 const FETCH_TIMOUT_SEC: u64 = 15;
 const FRAME_DELTA: u64 = 16;
@@ -28,7 +29,9 @@ pub struct Tasks {
     pub local_templates: Option<AsyncTask<Result<Vec<Template>, AppError>>>,
     pub proj_create: Option<AsyncTask<Result<(), AppError>>>,
     pub proj_open: Option<AsyncTask<Result<(), AppError>>>,
-    pub proj_delete: Option<AsyncTask<Result<(), AppError>>>
+    pub proj_delete: Option<AsyncTask<Result<(), AppError>>>,
+    pub check_auth: Option<AsyncTask<Result<(bool, String), AppError>>>,
+    pub login: Option<AsyncTask<Result<(bool, String), AppError>>>
 }
 
 pub struct App {
@@ -41,10 +44,12 @@ pub struct App {
     pub projects: Vec<Project>,
     pub editor_versions: Option<Vec<String>>,
     pub templates: Option<Vec<Template>>,
+    pub username: String,
     pub open_after_creation: bool,
     pub timer: u64,
     pub tick_counter: u64, 
     pub tasks: Tasks,
+    pub declined_login: bool,
     unity: Option<Arc<UnityCLI>>
 }
 
@@ -61,15 +66,18 @@ impl App {
             editor_versions: None,
             templates: None,
             tasks: Tasks::default(),
+            username: String::new(),
             open_after_creation: false,
             timer: 0,
             tick_counter: 0,
+            declined_login: false,
             unity: None,
         }
     }
 
     pub fn run() -> color_eyre::Result<()> {
         let mut app = Self::new();
+
         app.unity = match UnityCLI::discover() {
             Ok(unity_instance) => {
                 Some(Arc::new(unity_instance))
@@ -92,108 +100,111 @@ impl App {
 
             app.tick_counter = app.tick_counter.wrapping_add(1);
 
-            // TODO: function needed desperately lol, too much code repetion
-            if let Some(ref task) = app.tasks.projects {
-                if let Some(result) = task.poll() {
-                    app.tasks.projects = None;
-                    match result {
-                        Ok((names, projects)) => {
-                            app.list_items = names;
-                            app.projects = projects;
-                            app.dialogue.current = Dialogue::None;
-                        }
-                        Err(err) => {
-                            app.dialogue.current = Dialogue::Error(err.to_string());
-                        }
+            // projects
+            poll_task(
+                &mut app,
+                |app| &mut app.tasks.projects,
+                |app| {
+                    if matches!(app.dialogue.current, Dialogue::Info(_)) {
+                        app.update_loading(String::from("Loading projects..."));
                     }
-                } else if matches!(app.dialogue.current, Dialogue::Info(_)) {
-                    app.update_loading(String::from("Loading projects..."));
-                }
-            }
+                },
+                |app, result| match result {
+                    Ok((names, projects)) => {
+                        app.list_items = names;
+                        app.projects = projects;
+                        app.dialogue.current = Dialogue::None;
+                    }
+                    Err(err) => app.dialogue.current = Dialogue::Error(err.to_string()),
+                },
+            );
 
-            if let Some(ref task) = app.tasks.editors {
-                if let Some(result) = task.poll() {
-                    app.tasks.editors = None;
-                    match result {
-                        Ok(editors) => {
-                            if editors.is_empty() {
-                                app.dialogue.current = Dialogue::Error("No editors available...".to_string());
-                            } else {
-                                app.editor_versions = Some(editors.clone());
-                                app.list_items = editors;
-                                if !matches!(app.dialogue.current, Dialogue::Error(_)) {
-                                    app.dialogue.current = Dialogue::Input;
-                                }
-                            }
-                        }
-                        Err(err) => {
-                            app.dialogue.current = Dialogue::Error(err.to_string());
-                        }
-                    }
-                } else if matches!(app.dialogue.current, Dialogue::Info(_)) ||
-                    matches!(app.input.step, InputStep::Version){
+            // editors
+            poll_task(
+                &mut app,
+                |app| &mut app.tasks.editors,
+                |app| {
                     // ensures that if the user gets to InputStep::Version while still Loading
                     // that it shows the loading prompt instead of saying that there are none.
-                    app.dialogue.current = Dialogue::Info(String::new());
-                    app.update_loading(String::from("Loading editor versions..."));
-                }
-            }
-
-            if let Some(ref task) = app.tasks.templates {
-                if let Some(result) = task.poll() {
-                    app.tasks.templates = None;
-                    match result {
-                        Ok(templates) => {
-                            if templates.is_empty() {
-                                app.dialogue.current = Dialogue::Error("No templates found...".to_string());
-                            } else {
-                                app.templates = Some(templates.clone());
+                    if matches!(app.dialogue.current, Dialogue::Info(_)) || matches!(app.input.step, InputStep::Version) {
+                        app.dialogue.current = Dialogue::Info(String::new());
+                        app.update_loading(String::from("Loading editor versions..."));
+                    }
+                },
+                |app, result| match result {
+                    Ok(editors) => {
+                        if editors.is_empty() {
+                            app.dialogue.current = Dialogue::Error("No editors available...".to_string());
+                        } else {
+                            app.editor_versions = Some(editors.clone());
+                            app.list_items = editors;
+                            if !matches!(app.dialogue.current, Dialogue::Error(_)) {
                                 app.dialogue.current = Dialogue::Input;
                             }
                         }
-                        Err(err) => {
-                            app.dialogue.current = Dialogue::Error(err.to_string());
-                        }
                     }
-                } else if matches!(app.dialogue.current, Dialogue::Info(_)) ||
-                    matches!(app.input.step, InputStep::Template){
-                    app.dialogue.current = Dialogue::Info(String::new());
-                    app.update_loading(String::from("Loading templates..."));
-                    if (app.tick_counter - app.timer >= FETCH_TIMOUT_SEC * 1000 / FRAME_DELTA && 
-                        app.timer > 0 && app.tasks.local_templates.is_none()) {
-                        app.timer = 0;
-                        app.refresh_local_template_suggestions();
-                        app.tasks.templates = None;
+                    Err(err) => app.dialogue.current = Dialogue::Error(err.to_string()),
+                },
+                );
+
+            let handle_templates_result = 
+                |app: &mut App, result: Result<Vec<Template>, AppError>| match result {
+                Ok(templates) => {
+                    if templates.is_empty() {
+                        app.dialogue.current = Dialogue::Error("No templates found...".to_string());
+                    } else {
+                        app.templates = Some(templates.clone());
+                        app.dialogue.current = Dialogue::Input;
                     }
                 }
-            }
+                Err(err) => app.dialogue.current = Dialogue::Error(err.to_string()),
+            };
 
-            if let Some(ref task) = app.tasks.local_templates {
-                if let Some(result) = task.poll() {
-                    app.tasks.local_templates = None;
-                    match result {
-                        Ok(templates) => {
-                            if templates.is_empty() {
-                                app.dialogue.current = Dialogue::Error("No templates found...".to_string());
-                            } else {
-                                app.templates = Some(templates.clone());
-                                app.dialogue.current = Dialogue::Input;
-                            }
-                        }
-                        Err(err) => {
-                            app.dialogue.current = Dialogue::Error(err.to_string());
+            // online templates
+            poll_task(
+                &mut app,
+                |app| &mut app.tasks.templates,
+                |app| {
+                    if matches!(app.dialogue.current, Dialogue::Info(_)) || matches!(app.input.step, InputStep::Template) {
+                        app.dialogue.current = Dialogue::Info(String::new());
+                        app.update_loading(String::from("Loading templates..."));
+                        if app.tick_counter - app.timer >= FETCH_TIMOUT_SEC * 1000 / FRAME_DELTA
+                            && app.timer > 0
+                                && app.tasks.local_templates.is_none()
+                        {
+                            app.timer = 0;
+                            app.refresh_local_template_suggestions();
+                            app.tasks.templates = None;
                         }
                     }
-                } else if matches!(app.dialogue.current, Dialogue::Info(_)) ||
-                    matches!(app.input.step, InputStep::Template){
-                    app.dialogue.current = Dialogue::Info(String::new());
-                    app.update_loading(String::from("Timed out, Loading local templates..."));
-                }
-            }
+                },
+                handle_templates_result,
+            );
 
-            if let Some(ref task) = app.tasks.proj_create {
-                if let Some(result) = task.poll() {
-                    app.tasks.proj_create = None;
+            // local templates
+            poll_task(
+                &mut app,
+                |app| &mut app.tasks.local_templates,
+                |app| {
+                    if matches!(app.dialogue.current, Dialogue::Info(_)) || matches!(app.input.step, InputStep::Template) {
+                        app.dialogue.current = Dialogue::Info(String::new());
+                        app.update_loading(String::from("Timed out, Loading local templates..."));
+                    }
+                },
+                handle_templates_result,
+            );
+
+            // proj_create
+            poll_task(
+                &mut app,
+                |app| &mut app.tasks.proj_create,
+                |app| {
+                    if matches!(app.dialogue.current, Dialogue::Info(_)) || matches!(app.input.step, InputStep::Complete) {
+                        app.dialogue.current = Dialogue::Info(String::new());
+                        app.update_loading(format!("Creating project... (O)pen: {}", app.open_after_creation));
+                    }
+                },
+                |app, result| {
                     match result {
                         Ok(_) => {
                             app.dialogue.return_to = Dialogue::None;
@@ -208,63 +219,103 @@ impl App {
                                         }));
                                     }
                                 }
-                            }
-                            else {
+                            } else {
                                 app.dialogue.current = Dialogue::TimedInfo(
                                     String::from("Project created successfully!"),
-                                    Instant::now() + Duration::from_secs(3)
+                                    Instant::now() + Duration::from_secs(3),
                                 );
                             }
                         }
-                        Err(err) => {
-                            app.dialogue.current = Dialogue::Error(err.to_string());
-                        }
+                        Err(err) => app.dialogue.current = Dialogue::Error(err.to_string()),
                     }
                     app.input.step = InputStep::Name;
-                } else if matches!(app.dialogue.current, Dialogue::Info(_)) ||
-                    matches!(app.input.step, InputStep::Complete){
-                    app.dialogue.current = Dialogue::Info(String::new());
-                    app.update_loading(format!("Creating project... (O)pen: {}", app.open_after_creation));
-                }
-            }
+                },
+            );
 
-            if let Some(ref task) = app.tasks.proj_open {
-                if let Some(result) = task.poll() {
-                    app.tasks.proj_open = None;
-                    match result {
-                        Ok(_) => {
-                            app.dialogue.current = Dialogue::TimedInfo(
-                                String::from("Project opened successfully!"),
-                                Instant::now() + Duration::from_secs(3)
-                            );
-                        }
-                        Err(err) => {
-                            app.dialogue.current = Dialogue::Error(err.to_string());
-                        }
+            // proj_open
+            poll_task(
+                &mut app,
+                |app| &mut app.tasks.proj_open,
+                |app| {
+                    if matches!(app.dialogue.current, Dialogue::Info(_)) {
+                        app.update_loading("Opening project...".to_string());
                     }
-                } else if matches!(app.dialogue.current, Dialogue::Info(_)) {
-                    app.update_loading("Opening project...".to_string());
-                }
-            }
+                },
+                |app, result| match result {
+                    Ok(_) => {
+                        app.dialogue.current = Dialogue::TimedInfo(
+                            String::from("Project opened successfully!"),
+                            Instant::now() + Duration::from_secs(3),
+                        );
+                    }
+                    Err(err) => app.dialogue.current = Dialogue::Error(err.to_string()),
+                },
+            );
 
-            if let Some(ref task) = app.tasks.proj_delete {
-                if let Some(result) = task.poll() {
-                    app.tasks.proj_delete = None;
-                    match result {
-                        Ok(_) => {
-                            app.dialogue.current = Dialogue::TimedInfo(
-                                String::from("Project deleted successfully!"),
-                                Instant::now() + Duration::from_secs(3)
-                            );
-                        }
-                        Err(_) => {
-                            app.dialogue.current = Dialogue::Error(String::from("Failed to delete..."));
-                        }
+            // proj_delete
+            poll_task(
+                &mut app,
+                |app| &mut app.tasks.proj_delete,
+                |app| {
+                    if matches!(app.dialogue.current, Dialogue::Info(_)) {
+                        app.update_loading(String::from("Deleting project..."));
                     }
-                } else if matches!(app.dialogue.current, Dialogue::Info(_)) {
-                    app.update_loading(String::from("Deleting project..."));
-                }
-            }
+                },
+                |app, result| match result {
+                    Ok(_) => {
+                        app.dialogue.current = Dialogue::TimedInfo(
+                            String::from("Project deleted successfully!"),
+                            Instant::now() + Duration::from_secs(3),
+                        );
+                    }
+                    Err(_) => app.dialogue.current = Dialogue::Error(String::from("Failed to delete...")),
+                },
+            );
+
+            // login
+            poll_task(
+                &mut app,
+                |app| &mut app.tasks.login,
+                |app| {
+                    if matches!(app.dialogue.current, Dialogue::Info(_)) {
+                        app.update_loading(String::from("Logging in, please continue in browser..."));
+                    }
+                },
+                |app, result| match result {
+                    Ok((true, username)) => {
+                        app.dialogue.current = Dialogue::TimedInfo(
+                            String::from("Logged in successfully!"),
+                            Instant::now() + Duration::from_secs(3),
+                        );
+                        app.username = username;
+                    }
+                    Ok((false, _)) => {
+                        app.dialogue.current = Dialogue::Confirm(String::from("Failed to log in, please try again later."));
+                    }
+                    Err(err) => app.dialogue.current = Dialogue::Error(err.to_string()),
+                },
+                );
+
+            // check_auth: no loading indicator while this runs, matching the original
+            poll_task(
+                &mut app,
+                |app| &mut app.tasks.check_auth,
+                |_app| {},
+                |app, result| match result {
+                    Ok((true, username)) => {
+                        app.username = username;
+                    }
+                    Ok((false, _)) if !app.declined_login => {
+                        app.dialogue.selection = DialogueSelection::Ok;
+                        app.dialogue.current = Dialogue::ConfirmAction(
+                            String::from("You're not logged in, would you like to log in?"),
+                            Action::Login,
+                        );
+                    }
+                    Err(err) => app.dialogue.current = Dialogue::Error(err.to_string()),
+                    _ => (),
+                },
+            );
 
             if let Dialogue::TimedInfo(_, end_time) = app.dialogue.current {
                 if Instant::now() >= end_time {
@@ -299,13 +350,13 @@ impl App {
         match self.dialogue.current {
             Dialogue::None => self.handle_main_key(key),
             Dialogue::Input => self.handle_input_key(key),
-            Dialogue::DeleteConfirm { .. } | 
-                Dialogue::Error(_) | Dialogue::Confirm(_) => self.handle_dialogue_key(key),
+            Dialogue::DeleteConfirm { .. } | Dialogue::Error(_) |
+                Dialogue::Confirm(_) | Dialogue::ConfirmAction(_, _) => self.handle_dialogue_key(key),
             Dialogue::Info(_) => {
                 if key.code == KeyCode::Char('o') {
                     self.open_after_creation = !self.open_after_creation;
                 }
-                false
+                self.handle_dialogue_key(key)
             },
             Dialogue::TimedInfo(_, _) => {
                 self.dialogue.current = Dialogue::None;
@@ -395,6 +446,32 @@ impl App {
         false
     }
 
+    pub fn check_auth(&mut self) {
+        if let Some(unity) = &self.unity {
+            let uclone = unity.clone();
+
+            self.dialogue.current = Dialogue::Info(String::new());
+            if self.tasks.check_auth.is_none() {
+                self.tasks.check_auth = Some(AsyncTask::new(move || {
+                    uclone.is_loggedin()
+                }));
+            }
+        }
+    }
+
+    pub fn login(&mut self) {
+        if let Some(unity) = &self.unity {
+            let uclone = unity.clone();
+
+            self.dialogue.current = Dialogue::Info(String::new());
+            if self.tasks.login.is_none() {
+                self.tasks.login = Some(AsyncTask::new(move || {
+                    uclone.login()
+                }));
+            }
+        }
+    }
+
     pub fn refresh(&mut self) {
         self.list_items.clear();
         self.projects.clear();
@@ -411,6 +488,8 @@ impl App {
                 }));
             }
         }
+
+        self.check_auth();
 
         self.dialogue.close();
         self.list_state.select_first();
@@ -589,6 +668,19 @@ impl App {
             Dialogue::Confirm(_) => {
                 self.reset_after_dialogue(); 
                 self.refresh();
+            },
+            Dialogue::ConfirmAction(_, action) => {
+                match action {
+                    Action::Login => {
+                        if matches!(self.dialogue.selection, DialogueSelection::Ok) {
+                            self.login()
+                        }
+                        else if matches!(self.dialogue.selection, DialogueSelection::Cancel) {
+                            self.declined_login = true;
+                        }
+                    },
+                    _ => ()
+                }
             },
             _ => ()
         }

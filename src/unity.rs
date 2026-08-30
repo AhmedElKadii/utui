@@ -21,6 +21,55 @@ impl UnityCLI {
         }
     }
 
+    pub fn is_loggedin(&self) -> Result<(bool, String), AppError> {
+        let value = self.invoke(&["auth", "status", "--json"])?;
+
+        let data = value
+            .get("data")
+            .ok_or_else(|| AppError::Parse("Failed to fetch auth status!".into()))?;
+
+        let logged_in = data
+            .get("loggedIn")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+
+        if !logged_in {
+            return Ok((false, String::new()));
+        }
+
+        let name = data
+            .get("user")
+            .and_then(|u| u.get("name"))
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
+
+        Ok((true, name))
+    }
+
+    pub fn login(&self) -> Result<(bool, String), AppError> {
+        let value = self.invoke_ndjson(&["auth", "login", "--json"])?;
+
+        let success = value
+            .get("success")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+
+        if !success {
+            return Ok((false, String::new()));
+        }
+
+        let name = value
+            .get("data")
+            .and_then(|d| d.get("user"))
+            .and_then(|u| u.get("name"))
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
+
+        Ok((true, name))
+    }
+
     pub fn list_projects(&self) -> Result<Vec<Project>, AppError> {
         let json = self.invoke(&["p", "list", "--json"])?;
         let data = json_data_array(&json)?;
@@ -120,6 +169,22 @@ impl UnityCLI {
         Ok(())
     }
 
+    fn invoke_ndjson(&self, args: &[&str]) -> Result<Value, AppError> {
+        let stdout = self.raw(args)?;
+
+        let stream = serde_json::Deserializer::from_str(&stdout).into_iter::<Value>();
+        let mut last_value = None;
+
+        for result in stream {
+            match result {
+                Ok(v) => last_value = Some(v),
+                Err(e) => return Err(AppError::from(e)),
+            }
+        }
+
+        last_value.ok_or_else(|| AppError::Parse("Empty command output".into()))
+    }
+
     fn invoke(&self, args: &[&str]) -> Result<Value, AppError> {
         let stdout = self.raw(args)?;
         serde_json::from_str(&stdout).map_err(AppError::from)
@@ -147,20 +212,31 @@ fn parse_cli_response(message: &str) -> Result<(), AppError> {
         return Ok(());
     }
 
-    let json: Value = match serde_json::from_str(trimmed) {
-        Ok(val) => val,
-        Err(_) => return Ok(()), 
-    };
+    let json: Value = serde_json::Deserializer::from_str(trimmed)
+        .into_iter::<Value>()
+        .filter_map(Result::ok)
+        .last()
+        .ok_or_else(|| AppError::Parse(format!("No valid JSON in response: {trimmed}")))?;
 
     match json.get("success").and_then(Value::as_bool) {
         Some(false) => {
-            if let Some(err_str) = json.get("error").and_then(Value::as_str) {
-                if !err_str.trim().is_empty() {
-                    return Err(AppError::Parse(err_str.to_string()));
-                }
+            let messages: Vec<String> = json
+                .get("errors")
+                .and_then(Value::as_array)
+                .map(|errs| {
+                    errs.iter()
+                        .filter_map(|e| e.get("message").and_then(Value::as_str))
+                        .map(str::to_string)
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            if messages.is_empty() {
+                Err(AppError::Parse("Command failed with no error message".into()))
+            } else {
+                Err(AppError::Parse(messages.join("; ")))
             }
-            Ok(())
         }
-        _ => Ok(()), 
+        Some(true) | None => Ok(()),
     }
 }
