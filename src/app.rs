@@ -64,21 +64,26 @@ impl App {
             open_after_creation: false,
             timer: 0,
             tick_counter: 0,
-            unity: match UnityCLI::discover() {
-                Ok(unity_instance) => {
-                    Some(Arc::new(unity_instance))
-                }
-                Err(err) => {
-                    eprintln!("Unity CLI not found: {}", err);
-                    None
-                }
-            },
+            unity: None,
         }
     }
 
     pub fn run() -> color_eyre::Result<()> {
         let mut app = Self::new();
-        app.refresh();
+        app.unity = match UnityCLI::discover() {
+            Ok(unity_instance) => {
+                Some(Arc::new(unity_instance))
+            }
+            Err(err) => {
+                app.dialogue.current =
+                    Dialogue::Panic("UnityCLI not found, please ensure installation.".to_string());
+                None
+            }
+        };
+
+        if app.unity.is_some() {
+            app.refresh();
+        }
 
         let mut terminal = ratatui::init();
 
@@ -308,7 +313,12 @@ impl App {
                     self.refresh();
                 }
                 false
-            }
+            },
+            _ => {
+                if key.code == KeyCode::Char('q') { true }
+                else { false }
+            },
+
         }
     }
 
@@ -575,13 +585,12 @@ impl App {
                     self.finish_create();
                 }
             }
-            Dialogue::Error(_) | Dialogue::Info(_) |
-                Dialogue::TimedInfo(_, _) => self.reset_after_dialogue(),
+            Dialogue::TimedInfo(_, _) => self.reset_after_dialogue(),
             Dialogue::Confirm(_) => {
                 self.reset_after_dialogue(); 
                 self.refresh();
             },
-            Dialogue::None => {}
+            _ => ()
         }
     }
 

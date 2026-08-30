@@ -11,6 +11,7 @@ pub enum Dialogue {
     Error(String),
     Info(String),
     TimedInfo(String, Instant),
+    Panic(String),
     Confirm(String)
 }
 
