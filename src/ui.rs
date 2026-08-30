@@ -245,12 +245,13 @@ fn render_list(frame: &mut Frame, area: Rect, list_state: &mut ListState, list_i
 fn render_help_text(frame: &mut Frame, area: Rect, username: String) {
     let title = Line::from_iter([
         Span::from(
-            if username.is_empty() {
+            if username == "NONE" {
                 String::from("[Not Logged In]")
             }
-            else {
+            else if !username.is_empty() {
                 format!("[Logged In: {}]", username)
             }
+            else { String::new() }
         ).bold(),
         // Span::from("| o - Open | ").bold(),
         // Span::from("d - Delete | ").bold(),

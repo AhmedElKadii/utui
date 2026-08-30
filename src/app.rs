@@ -306,13 +306,17 @@ impl App {
                         app.username = username;
                     }
                     Ok((false, _)) if !app.declined_login => {
+                        app.username = String::from("NONE");
                         app.dialogue.selection = DialogueSelection::Ok;
                         app.dialogue.current = Dialogue::ConfirmAction(
                             String::from("You're not logged in, would you like to log in?"),
                             Action::Login,
                         );
                     }
-                    Err(err) => app.dialogue.current = Dialogue::Error(err.to_string()),
+                    Err(err) => {
+                        app.username = String::from("NONE");
+                        app.dialogue.current = Dialogue::Error(err.to_string());
+                    },
                     _ => (),
                 },
             );
@@ -677,6 +681,7 @@ impl App {
                         }
                         else if matches!(self.dialogue.selection, DialogueSelection::Cancel) {
                             self.declined_login = true;
+                            self.reset_after_dialogue();
                         }
                     },
                     _ => ()
