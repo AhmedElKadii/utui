@@ -49,6 +49,9 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         Dialogue::Error(message) => {
             popup_dialogue(app, frame, "Error", message, Some("CONFIRM"), None);
         }
+        Dialogue::Panic(message) => {
+            popup_dialogue(app, frame, "Panicked!", message, None, None);
+        }
         Dialogue::Info(message) => {
             popup_dialogue(app, frame, "Info", message, None, None);
         }
@@ -116,6 +119,22 @@ pub fn render(frame: &mut Frame, app: &mut App) {
     }
 }
 
+fn wrapped_line_count(text: &str, width: u16) -> u16 {
+    if width == 0 {
+        return text.lines().count().max(1) as u16;
+    }
+    let mut total = 0u16;
+    for line in text.split('\n') {
+        if line.is_empty() {
+            total += 1;
+            continue;
+        }
+        let wrapped = textwrap::wrap(line, width as usize);
+        total += wrapped.len().max(1) as u16;
+    }
+    total.max(1)
+}
+
 fn popup_dialogue(
     app: &App,
     frame: &mut Frame,
@@ -126,44 +145,49 @@ fn popup_dialogue(
 ) {
     let area = frame.area();
     const MIN_WIDTH: u16 = 45;
-    
+
     let has_buttons = ok_label.is_some() || cancel_label.is_some();
-    let min_height: u16 = if has_buttons { 9 } else { 5 };
+
+    // Chrome: borders (2) + top padding (1) + bottom padding (1) [+ buttons (3) if present]
+    let chrome_height: u16 = if has_buttons { 2 + 1 + 1 + 3 } else { 2 + 1 + 1 };
 
     let popup_width = ((area.width as f32 * 0.25) as u16)
         .max(MIN_WIDTH)
         .min(area.width);
-    let popup_height = ((area.height as f32 * 0.18) as u16)
-        .max(min_height)
-        .min(area.height);
+
+    let text_width = popup_width.saturating_sub(4);
+    let content_lines = wrapped_line_count(message, text_width);
+
+    let min_height: u16 = if has_buttons { 9 } else { 5 };
+    let desired_height = content_lines.saturating_add(chrome_height).max(min_height);
+    let popup_height = desired_height.min(area.height);
 
     let centered_area = area.centered(
         Constraint::Length(popup_width),
         Constraint::Length(popup_height),
     );
     frame.render_widget(Clear, centered_area);
-
     let popup_block = Block::bordered().title(title);
     let inner_area = popup_block.inner(centered_area);
     frame.render_widget(popup_block, centered_area);
 
+    // Length(1) top pad, content, Length(1) bottom pad, [buttons]
     let constraints = if has_buttons {
         vec![
-            Constraint::Length(1),
-            Constraint::Fill(1),
-            Constraint::Length(1),
-            Constraint::Length(3),
+            Constraint::Length(1),           // top padding
+            Constraint::Min(content_lines),  // message
+            Constraint::Length(1),           // bottom padding
+            Constraint::Length(3),           // buttons
         ]
     } else {
         vec![
-            Constraint::Fill(1),
-            Constraint::Length(1),
-            Constraint::Fill(1),
+            Constraint::Length(1),           // top padding
+            Constraint::Min(content_lines),  // message
+            Constraint::Length(1),           // bottom padding
         ]
     };
-
     let chunks = Layout::vertical(constraints).split(inner_area);
-    let text_chunk = if has_buttons { chunks[1] } else { chunks[1] };
+    let text_chunk = chunks[1];
 
     let paragraph = Paragraph::new(message.to_string())
         .block(Block::new().padding(Padding::horizontal(1)))
@@ -180,7 +204,6 @@ fn popup_dialogue(
             Constraint::Fill(1),
         ])
         .split(chunks[3]);
-
         let ok_style = if app.dialogue.selection == DialogueSelection::Ok {
             Modifier::REVERSED
         } else {
@@ -191,7 +214,6 @@ fn popup_dialogue(
         } else {
             Modifier::empty()
         };
-
         if let Some(label) = ok_label {
             let ok_btn = Paragraph::new(label)
                 .block(Block::bordered().padding(Padding::horizontal(1)))
@@ -199,7 +221,6 @@ fn popup_dialogue(
                 .alignment(Alignment::Center);
             frame.render_widget(ok_btn, button_chunks[1]);
         }
-
         if let Some(label) = cancel_label {
             let cancel_btn = Paragraph::new(label)
                 .block(Block::bordered().padding(Padding::horizontal(1)))
