@@ -4,7 +4,7 @@ use ratatui::style::{Color, Modifier, Stylize};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear, List, ListState, Padding, Paragraph, Wrap};
 
-use crate::app::{App, fuzzy_filter_sorted};
+use crate::app::{App, Screen, fuzzy_filter_sorted};
 use crate::config;
 use crate::dialogue::{Dialogue, DialogueSelection};
 use crate::input::InputStep;
@@ -77,7 +77,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
                 );
             }
             InputStep::Version => {
-                if let Some(versions) = app.editor_versions.clone() {
+                if let Some(versions) = app.installed_editors.clone() {
                     app.list_items = fuzzy_filter_sorted(&app.input.value, versions);
                     app.input.render_input_box(
                         frame,
@@ -103,16 +103,33 @@ pub fn render(frame: &mut Frame, app: &mut App) {
             _ => {}
         },
         Dialogue::None => {
-            if app.tasks.projects.is_some() {
-                app.dialogue.current = Dialogue::Info(String::new());
-            } else if app.list_items.is_empty() {
-                let empty = Line::from_iter([
-                    Span::from(" No projects available...").bold(),
-                    Span::from(" press c to create a project."),
-                ]);
-                frame.render_widget(empty.left_aligned(), middle);
-            } else {
-                render_list(frame, middle, &mut app.list_state, app.list_items.clone());
+            match app.screen {
+                Screen::ProjectList => {
+                    if app.tasks.projects.is_some() {
+                        app.dialogue.current = Dialogue::Info(String::new());
+                    } else if app.list_items.is_empty() {
+                        let empty = Line::from_iter([
+                            Span::from(" No projects available...").bold(),
+                            Span::from(" press c to create a project."),
+                        ]);
+                        frame.render_widget(empty.left_aligned(), middle);
+                    } else {
+                        render_list(frame, middle, &mut app.list_state, app.list_items.clone());
+                    }
+                },
+                Screen::EditorList => {
+                    if app.tasks.all_editors.is_some() {
+                        app.dialogue.current = Dialogue::Info(String::new());
+                    } else if app.list_items.is_empty() {
+                        let empty = Line::from_iter([
+                            Span::from(" Failed to get editors...").bold(),
+                        ]);
+                        frame.render_widget(empty.left_aligned(), middle);
+                    } else {
+                        render_list(frame, middle, &mut app.list_state, app.list_items.clone());
+                    }
+                },
+                Screen::CommandList => todo!()
             }
         }
     }

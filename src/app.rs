@@ -24,7 +24,10 @@ const FRAME_DELTA: u64 = 16;
 #[derive(Default)]
 pub struct Tasks {
     pub projects: Option<AsyncTask<Result<(Vec<String>, Vec<Project>), AppError>>>,
-    pub editors: Option<AsyncTask<Result<Vec<String>, AppError>>>,
+    pub all_editors: Option<AsyncTask<Result<Vec<(bool, String)>, AppError>>>,
+    pub installed_editors: Option<AsyncTask<Result<Vec<String>, AppError>>>,
+    pub editor_install: Option<AsyncTask<Result<(), AppError>>>,
+    pub editor_uninstall: Option<AsyncTask<Result<(), AppError>>>,
     pub templates: Option<AsyncTask<Result<Vec<Template>, AppError>>>,
     pub local_templates: Option<AsyncTask<Result<Vec<Template>, AppError>>>,
     pub proj_create: Option<AsyncTask<Result<(), AppError>>>,
@@ -34,7 +37,14 @@ pub struct Tasks {
     pub login: Option<AsyncTask<Result<(bool, String), AppError>>>
 }
 
+pub enum Screen {
+    ProjectList,
+    EditorList,
+    CommandList
+}
+
 pub struct App {
+    pub screen: Screen,
     pub list_state: ListState,
     pub selected_index: Option<usize>,
     pub input: InputHandler,
@@ -42,10 +52,13 @@ pub struct App {
     pub list_items: Vec<String>,
     pub list_items_buffer: Vec<String>,
     pub projects: Vec<Project>,
-    pub editor_versions: Option<Vec<String>>,
+    pub all_editors: Option<Vec<(bool, String)>>,
+    pub installed_editors: Option<Vec<String>>,
+    pub prev_editor_count: usize,
     pub templates: Option<Vec<Template>>,
     pub username: String,
     pub open_after_creation: bool,
+    pub instant_timer: Instant,
     pub timer: u64,
     pub tick_counter: u64, 
     pub tasks: Tasks,
@@ -56,6 +69,7 @@ pub struct App {
 impl App {
     pub fn new() -> Self {
         Self {
+            screen: Screen::ProjectList,
             list_state: ListState::default().with_selected(Some(0)),
             selected_index: None,
             input: InputHandler::new(),
@@ -63,11 +77,14 @@ impl App {
             list_items: Vec::new(),
             list_items_buffer: Vec::new(),
             projects: Vec::new(),
-            editor_versions: None,
+            all_editors: None,
+            installed_editors: None,
+            prev_editor_count: 0,
             templates: None,
             tasks: Tasks::default(),
             username: String::new(),
             open_after_creation: false,
+            instant_timer: Instant::now(),
             timer: 0,
             tick_counter: 0,
             declined_login: false,
@@ -119,10 +136,94 @@ impl App {
                 },
             );
 
-            // editors
+            // all editors
             poll_task(
                 &mut app,
-                |app| &mut app.tasks.editors,
+                |app| &mut app.tasks.all_editors,
+                |app| {
+                    // ensures that if the user gets to InputStep::Version while still Loading
+                    // that it shows the loading prompt instead of saying that there are none.
+                    if matches!(app.dialogue.current, Dialogue::Info(_)) || matches!(app.input.step, InputStep::Version) {
+                        app.dialogue.current = Dialogue::Info(String::new());
+                        app.update_loading(String::from("Loading editor versions..."));
+                    }
+                },
+                |app, result| match result {
+                    Ok(all_editors) => {
+                        if all_editors.is_empty() {
+                            app.dialogue.current = Dialogue::Error("Failed to fetch editors...".to_string());
+                        } else {
+                            app.all_editors = Some(all_editors.clone());
+
+                            let installed_count = 
+                                all_editors.iter().filter(|(installed, _)| *installed).count();
+
+                            let editors: Vec<String> = all_editors.into_iter().map(
+                                |(installed, name)| 
+                                format!(
+                                    "{} {}",
+                                    if installed { "✔" } else { "✘" },
+                                    name
+                                )).collect();
+                            app.list_items = editors;
+
+                            app.dialogue.current = Dialogue::None;
+                        }
+                    }
+                    Err(err) => app.dialogue.current = Dialogue::Error(err.to_string()),
+                },
+            );
+
+            // install editor
+            poll_task(
+                &mut app,
+                |app| &mut app.tasks.editor_install,
+                |app| {
+                    if matches!(app.dialogue.current, Dialogue::Info(_)) {
+                        app.update_loading(format!(
+                                "Installing editor... this may take a while.\n\nElapsed: {}", 
+                                format_duration(Instant::now().saturating_duration_since(app.instant_timer))
+                        ));
+                    }
+                },
+                |app, result| match result {
+                    Ok(_) => {
+                        app.dialogue.current = Dialogue::TimedInfo(
+                            String::from("Editor installed successfully!"),
+                            Instant::now() + Duration::from_secs(3)
+                        );
+                    }
+                    Err(err) => app.dialogue.current = Dialogue::Error(err.to_string()),
+                },
+            );
+
+            // uninstall editor
+            poll_task(
+                &mut app,
+                |app| &mut app.tasks.editor_uninstall,
+                |app| {
+                    if matches!(app.dialogue.current, Dialogue::Info(_)) {
+                        app.update_loading(format!(
+                                "Uninstalling editor... this may take a while.\n\nElapsed: {}", 
+                                format_duration(Instant::now().saturating_duration_since(app.instant_timer))
+                        ));
+                    }
+                },
+                |app, result| match result {
+                    _ => {
+                        app.dialogue.current = Dialogue::TimedInfo(
+                            String::from("Editor uninstalled successfully!"),
+                            Instant::now() + Duration::from_secs(3)
+                        );
+                    }
+                },
+            );
+
+
+            // installed editors
+            poll_task(
+                &mut app,
+                |app| &mut app.tasks.installed_editors,
                 |app| {
                     // ensures that if the user gets to InputStep::Version while still Loading
                     // that it shows the loading prompt instead of saying that there are none.
@@ -136,7 +237,7 @@ impl App {
                         if editors.is_empty() {
                             app.dialogue.current = Dialogue::Error("No editors available...".to_string());
                         } else {
-                            app.editor_versions = Some(editors.clone());
+                            app.installed_editors = Some(editors.clone());
                             app.list_items = editors;
                             if !matches!(app.dialogue.current, Dialogue::Error(_)) {
                                 app.dialogue.current = Dialogue::Input;
@@ -145,7 +246,7 @@ impl App {
                     }
                     Err(err) => app.dialogue.current = Dialogue::Error(err.to_string()),
                 },
-                );
+            );
 
             let handle_templates_result = 
                 |app: &mut App, result: Result<Vec<Template>, AppError>| match result {
@@ -294,7 +395,7 @@ impl App {
                     }
                     Err(err) => app.dialogue.current = Dialogue::Error(err.to_string()),
                 },
-                );
+            );
 
             // check_auth: no loading indicator while this runs, matching the original
             poll_task(
@@ -351,29 +452,45 @@ impl App {
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> bool {
-        match self.dialogue.current {
-            Dialogue::None => self.handle_main_key(key),
-            Dialogue::Input => self.handle_input_key(key),
-            Dialogue::DeleteConfirm { .. } | Dialogue::Error(_) |
-                Dialogue::Confirm(_) | Dialogue::ConfirmAction(_, _) => self.handle_dialogue_key(key),
-            Dialogue::Info(_) => {
-                if key.code == KeyCode::Char('o') {
-                    self.open_after_creation = !self.open_after_creation;
+        match self.screen {
+            Screen::ProjectList => {
+                match self.dialogue.current {
+                    Dialogue::None => self.handle_main_key(key),
+                    Dialogue::Input => self.handle_input_key(key),
+                    Dialogue::DeleteConfirm { .. } | Dialogue::Error(_) |
+                        Dialogue::Confirm(_) | Dialogue::ConfirmAction(_, _) => self.handle_dialogue_key(key),
+                    Dialogue::Info(_) => {
+                        if key.code == KeyCode::Char('o') {
+                            self.open_after_creation = !self.open_after_creation;
+                        }
+                        self.handle_dialogue_key(key)
+                    },
+                    Dialogue::TimedInfo(_, _) => {
+                        self.dialogue.current = Dialogue::None;
+                        if matches!(self.dialogue.return_to, Dialogue::None) {
+                            self.refresh();
+                        }
+                        false
+                    },
+                    _ => {
+                        if key.code == KeyCode::Char('q') { true }
+                        else { false }
+                    },
                 }
-                self.handle_dialogue_key(key)
             },
-            Dialogue::TimedInfo(_, _) => {
-                self.dialogue.current = Dialogue::None;
-                if matches!(self.dialogue.return_to, Dialogue::None) {
-                    self.refresh();
+            Screen::EditorList => {
+                match self.dialogue.current {
+                    Dialogue::TimedInfo(_, _) => {
+                        self.dialogue.current = Dialogue::None;
+                        if matches!(self.dialogue.return_to, Dialogue::None) {
+                            self.refresh();
+                        }
+                        false
+                    },
+                    _ => self.handle_editor_list_key(key)
                 }
-                false
             },
-            _ => {
-                if key.code == KeyCode::Char('q') { true }
-                else { false }
-            },
-
+            _ => false
         }
     }
 
@@ -395,7 +512,49 @@ impl App {
             KeyCode::Char('o') => self.open_selected_project(),
             KeyCode::Char('c') => self.open_create_dialogue(),
             KeyCode::Char('r') => self.refresh(),
+            KeyCode::Char('e') => {
+                self.screen = Screen::EditorList;
+                self.refresh();
+            },
             KeyCode::Esc => self.collapse_project(),
+            KeyCode::Char('q') => return true,
+            _ => {}
+        }
+        false
+    }
+
+    fn handle_editor_list_key(&mut self, key: KeyEvent) -> bool {
+        match key.code {
+            KeyCode::Char('j') | KeyCode::Down => self.move_selection(true),
+            KeyCode::Char('n') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.move_selection(true)
+            }
+            KeyCode::Char('k') | KeyCode::Up => self.move_selection(false),
+            KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.move_selection(false)
+            }
+            KeyCode::Char('i') => {
+                if let Some(version) = self.list_state.selected()
+                    .and_then(|i| self.all_editors.as_ref()?.get(i))
+                        .map(|(_, v)| v.clone())
+                {
+                    self.install_editor(version);
+                }
+            }
+            // KeyCode::Char('m') => todo!("manage editor version modules"),
+            KeyCode::Char('d') => {
+                if let Some(version) = self.list_state.selected()
+                    .and_then(|i| self.all_editors.as_ref()?.get(i))
+                        .map(|(_, v)| v.clone())
+                {
+                    self.uninstall_editor(version);
+                }
+            },
+            KeyCode::Esc => {
+                self.screen = Screen::ProjectList;
+                self.refresh();
+            },
+            KeyCode::Enter if self.dialogue.selection != DialogueSelection::None => self.execute_selection(),
             KeyCode::Char('q') => return true,
             _ => {}
         }
@@ -477,6 +636,14 @@ impl App {
     }
 
     pub fn refresh(&mut self) {
+        match self.screen {
+            Screen::ProjectList => self.refresh_projects(),
+            Screen::EditorList => self.refresh_editors(),
+            _ => ()
+        }
+    }
+
+    pub fn refresh_projects(&mut self) {
         self.list_items.clear();
         self.projects.clear();
 
@@ -494,6 +661,24 @@ impl App {
         }
 
         self.check_auth();
+
+        self.dialogue.close();
+        self.list_state.select_first();
+    }
+
+    pub fn refresh_editors(&mut self) {
+        self.list_items.clear();
+        self.all_editors = None;
+
+        if let Some(unity) = &self.unity {
+            let uclone = unity.clone();
+
+            if self.tasks.all_editors.is_none() {
+                self.tasks.all_editors = Some(AsyncTask::new(move || {
+                    uclone.list_editors()
+                }));
+            }
+        }
 
         self.dialogue.close();
         self.list_state.select_first();
@@ -536,13 +721,13 @@ impl App {
     }
 
     fn refresh_version_suggestions(&mut self) {
-        if self.editor_versions.is_none() {
-            if self.tasks.editors.is_none() {
+        if self.installed_editors.is_none() {
+            if self.tasks.installed_editors.is_none() {
                 if let Some(unity) = &self.unity {
                     let uclone = unity.clone();
 
-                    self.tasks.editors = Some(AsyncTask::new(move || {
-                        uclone.list_editors()
+                    self.tasks.installed_editors = Some(AsyncTask::new(move || {
+                        uclone.list_installed_editors()
                     }));
                 }
             }
@@ -614,6 +799,34 @@ impl App {
                         uclone.create_project(&project)
                     }));
                 }
+            }
+        }
+    }
+
+    fn install_editor(&mut self, version: String) {
+        if let Some(unity) = &self.unity {
+            let uclone = unity.clone();
+
+            self.dialogue.current = Dialogue::Info(String::new());
+            if self.tasks.editor_install.is_none() {
+                self.instant_timer = Instant::now();
+                self.tasks.editor_install = Some(AsyncTask::new(move || {
+                    uclone.install_editor(&version)
+                }));
+            }
+        }
+    }
+
+    fn uninstall_editor(&mut self, version: String) {
+        if let Some(unity) = &self.unity {
+            let uclone = unity.clone();
+
+            self.dialogue.current = Dialogue::Info(String::new());
+            if self.tasks.editor_uninstall.is_none() {
+                self.instant_timer = Instant::now();
+                self.tasks.editor_uninstall = Some(AsyncTask::new(move || {
+                    uclone.uninstall_editor(&version)
+                }));
             }
         }
     }
@@ -693,7 +906,7 @@ impl App {
 
     fn clear_tasks(&mut self) {
         self.tasks.projects = None;
-        self.tasks.editors = None;
+        self.tasks.installed_editors = None;
         self.tasks.templates = None;
         self.tasks.proj_open = None;
         self.tasks.proj_create = None;
@@ -730,7 +943,7 @@ impl App {
                 true
             }
             InputStep::Version => {
-                if let Some(versions) = self.editor_versions.clone() {
+                if let Some(versions) = self.installed_editors.clone() {
                     if !versions.contains(&self.input.value) {
                         self.dialogue.return_to = self.dialogue.current.clone();
                         self.dialogue.current = Dialogue::Error("Please select a valid version!".to_string());
@@ -838,7 +1051,7 @@ impl App {
         self.dialogue.selected_project = Some(Project::default());
         self.dialogue.selection = DialogueSelection::Ok;
         self.input.step = InputStep::Name;
-        self.editor_versions = None;
+        self.installed_editors = None;
         self.templates = None;
         self.refresh_version_suggestions()
     }
@@ -968,3 +1181,19 @@ pub fn fuzzy_filter_sorted(query: &str, list_items: Vec<String>) -> Vec<String> 
         .map(|(word, _)| word.to_string())
         .collect()
 }
+
+pub fn format_duration(d: Duration) -> String {
+    let total_secs = d.as_secs();
+    let h = total_secs / 3600;
+    let m = (total_secs % 3600) / 60;
+    let s = total_secs % 60;
+
+    if h > 0 {
+        format!("{h}h {m}m {s}s")
+    } else if m > 0 {
+        format!("{m}m {s}s")
+    } else {
+        format!("{s}s")
+    }
+}
+
