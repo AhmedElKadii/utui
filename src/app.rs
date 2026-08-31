@@ -1,15 +1,11 @@
-#![allow(warnings)]
 use arboard::Clipboard;
 use crossterm::event::{self, KeyCode, KeyEvent, KeyModifiers};
 use ratatui::widgets::ListState;
-use rayon::iter::walk_tree;
 use rust_fuzzy_search::fuzzy_search_threshold;
-use std::thread::sleep;
-use std::{default, fs};
+use std::fs;
 use std::time::{Duration, Instant};
 use std::sync::Arc;
 
-use crate::dialogue::Dialogue::TimedInfo;
 use crate::dialogue::{Action, Dialogue, DialogueSelection, DialogueState};
 use crate::error::AppError;
 use crate::help::HelpState;
