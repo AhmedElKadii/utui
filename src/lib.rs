@@ -9,5 +9,6 @@ pub mod template;
 pub mod ui;
 pub mod unity;
 pub mod threading;
+pub mod help;
 
 pub use app::App;

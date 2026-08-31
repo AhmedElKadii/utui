@@ -1,7 +1,7 @@
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Position};
 use ratatui::style::{Color, Modifier, Style, Stylize};
 use ratatui::text::{Line, Text};
-use ratatui::widgets::{Block, ListState, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState};
+use ratatui::widgets::{Block, BorderType, ListState, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState};
 use ratatui::Frame;
 use unicode_width::UnicodeWidthStr;
 
@@ -143,11 +143,15 @@ impl InputHandler {
 
         let input = Paragraph::new(self.value.as_str())
             .style(Style::default().fg(Color::Yellow))
-            .block(Block::bordered().title(title_message))
+            .block(
+                Block::bordered()
+                .border_type(BorderType::Rounded)
+                .title(title_message),
+            )
             .scroll((0, input_scroll_offset as u16));
         frame.render_widget(input, chunks[1]);
 
-        let text = Text::from(Line::from(msg).alignment(Alignment::Right)).patch_style(style);
+        let text = Text::from(Line::from(msg).alignment(Alignment::Center)).patch_style(style);
         let help_message = Paragraph::new(text);
         frame.render_widget(help_message, chunks[0]);
 
@@ -230,7 +234,10 @@ impl InputHandler {
 
             let total_lines = all_lines.len();
             let paragraph = Paragraph::new(all_lines)
-                .block(Block::bordered())
+                .block(
+                    Block::bordered()
+                    .border_type(BorderType::Rounded),
+                )
                 .style(Color::White)
                 .scroll((scroll_offset as u16, 0));
             frame.render_widget(paragraph, chunks[2]);
@@ -239,8 +246,8 @@ impl InputHandler {
                 let mut scrollbar_state = ScrollbarState::new(total_lines.saturating_sub(available_height))
                     .position(scroll_offset);
                 let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
-                    .begin_symbol(Some("┐"))
-                    .end_symbol(Some("┘"))
+                    .begin_symbol(Some("╮"))
+                    .end_symbol(Some("╯"))
                     .track_symbol(Some("│"))
                     .thumb_symbol("█");
                 frame.render_stateful_widget(scrollbar, chunks[2], &mut scrollbar_state);

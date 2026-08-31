@@ -1,12 +1,13 @@
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
-use ratatui::style::{Color, Modifier, Stylize};
+use ratatui::style::{Color, Modifier, Style, Stylize};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Borders, Clear, List, ListState, Padding, Paragraph, Wrap};
+use ratatui::widgets::{Block, BorderType, Borders, Clear, List, ListState, Padding, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Wrap};
 
 use crate::app::{App, Screen, fuzzy_filter_sorted};
 use crate::config;
 use crate::dialogue::{Dialogue, DialogueSelection};
+use crate::help::render_help_menu;
 use crate::input::InputStep;
 
 pub fn render(frame: &mut Frame, app: &mut App) {
@@ -17,7 +18,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         Constraint::Fill(1),
         Constraint::Length(1),
     ];
-    let layout = Layout::vertical(constraints);
+    let layout = Layout::vertical(constraints).margin(0);
     let [top, middle, bottom] = frame.area().layout(&layout);
 
     let title = Line::from_iter([
@@ -25,6 +26,22 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         Span::from(format!(" {}", config::VERSION)).gray(),
     ]);
     frame.render_widget(title.left_aligned(), top);
+
+    let auth_status = Line::from(
+        if app.username == "NONE" {
+            String::from("[Not Logged In] ")
+        }
+        else if !app.username.is_empty() {
+            format!("[Logged In: {}] ", app.username)
+        }
+        else { String::new() }
+    );
+
+    frame.render_widget(auth_status.right_aligned(), top);
+
+    if app.show_help {
+        render_help_menu(frame, &mut app.help_state);
+    }
 
     match &app.dialogue.current {
         Dialogue::DeleteConfirm { with_dir } => {
@@ -143,7 +160,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
     }
 
     if matches!(app.dialogue.current, Dialogue::None) {
-        render_help_text(frame, bottom, app.username.clone());
+        render_help_text(app, frame, bottom);
     }
 }
 
@@ -239,21 +256,23 @@ fn popup_dialogue(
         ])
         .split(chunks[3]);
         let ok_style = if app.dialogue.selection == DialogueSelection::Ok {
-            Modifier::REVERSED
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
         } else {
-            Modifier::empty()
+            Style::default()
         };
         let cancel_style = if app.dialogue.selection == DialogueSelection::Cancel {
-            Modifier::REVERSED
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
         } else {
-            Modifier::empty()
+            Style::default()
         };
+
         if let Some(label) = ok_label {
             let ok_btn = Paragraph::new(label)
                 .block(
                     Block::bordered()
-                        .border_type(BorderType::Rounded)
-                        .padding(Padding::horizontal(1)),
+                    .border_type(BorderType::Rounded)
+                    .border_style(ok_style)
+                    .padding(Padding::horizontal(1)),
                 )
                 .style(ok_style)
                 .alignment(Alignment::Center);
@@ -274,6 +293,9 @@ fn popup_dialogue(
 }
 
 fn render_list(frame: &mut Frame, area: Rect, list_state: &mut ListState, list_items: Vec<String>, title: &str) {
+    let total_items = list_items.len();
+    let visible_height = area.height.saturating_sub(2) as usize;
+
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
@@ -284,27 +306,91 @@ fn render_list(frame: &mut Frame, area: Rect, list_state: &mut ListState, list_i
         .style(Color::White)
         .highlight_style(Modifier::REVERSED)
         .highlight_symbol("> ");
+
     frame.render_stateful_widget(list, area, list_state);
+
+    let mut scrollbar_state = ScrollbarState::new(total_items.saturating_sub(visible_height))
+        .position(list_state.offset());
+
+    let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
+        .begin_symbol(Some("╮"))
+        .end_symbol(Some("╯"))
+        .track_symbol(Some("│"))
+        .thumb_symbol("█");
+
+    frame.render_stateful_widget(scrollbar, area, &mut scrollbar_state);
 }
 
-fn render_help_text(frame: &mut Frame, area: Rect, username: String) {
-    let title = Line::from_iter([
-        Span::from(
-            if username == "NONE" {
-                String::from("[Not Logged In]")
-            }
-            else if !username.is_empty() {
-                format!("[Logged In: {}]", username)
-            }
-            else { String::new() }
-        ).bold(),
-        // Span::from("| o - Open | ").bold(),
-        // Span::from("d - Delete | ").bold(),
-        // Span::from("D - Delete with Dir | ").bold(),
-        // Span::from("c - Create | ").bold(),
-        // Span::from("j/Ctrl-n - Next | ").bold(),
-        // Span::from("k/Ctrl-p - Prev | ").bold(),
-        // Span::from("q - Quit").bold(),
-    ]);
-    frame.render_widget(title.centered(), area);
+fn help_entries(app: &App) -> Vec<(&'static str, &'static str)> {
+    match app.screen {
+        Screen::ProjectList => match app.dialogue.current {
+            Dialogue::None => vec![
+                ("j/k", "Navigate"),
+                ("Enter", "Details"),
+                ("o", "Open"),
+                ("d", "Delete"),
+                ("D", "w/ Dir"),
+                ("c", "Create"),
+                ("e", "Editors"),
+                ("r", "Refresh"),
+                ("q", "Quit"),
+            ],
+            Dialogue::Input => vec![
+                ("Enter", "Confirm"),
+                ("Esc", "Cancel"),
+                ("Tab", "Complete Path"),
+                ("Ctrl-n/p", "Navigate"),
+                ("Ctrl-v", "Paste"),
+            ],
+            Dialogue::DeleteConfirm { .. }
+            | Dialogue::Confirm(_)
+            | Dialogue::ConfirmAction(_, _) => vec![
+                ("h/l", "Select"),
+                ("Enter", "Confirm"),
+                ("Esc", "Cancel"),
+            ],
+            Dialogue::Error(_) => vec![("Enter", "Dismiss"), ("Esc", "Dismiss")],
+            Dialogue::Info(_) => vec![("o", "Toggle Open After Create")],
+            _ => vec![],
+        },
+        Screen::EditorList => vec![
+            ("j/k", "Navigate"),
+            ("i", "Install"),
+            ("d", "Uninstall"),
+            ("Esc", "Back"),
+            ("q", "Quit"),
+        ],
+        Screen::CommandList => vec![],
+    }
+}
+
+fn render_help_text(app: &App, frame: &mut Frame, area: Rect) {
+    let key_style = Style::default()
+        .fg(Color::Yellow)
+        .add_modifier(Modifier::BOLD);
+    let hint_style = Style::default().fg(Color::DarkGray);
+    let sep_style = Style::default().fg(Color::DarkGray);
+
+    let mut entries = help_entries(app);
+    if !entries.iter().any(|(k, _)| *k == "?") {
+        entries.push(("?", "Help"));
+    }
+
+    if entries.is_empty() {
+        return;
+    }
+
+    let mut spans = Vec::with_capacity(entries.len() * 3);
+    for (i, (key, desc)) in entries.iter().enumerate() {
+        if i > 0 {
+            spans.push(Span::styled(" · ", sep_style));
+        }
+        let is_hint = *key == "?";
+        let style = if is_hint { hint_style } else { key_style };
+        spans.push(Span::styled(*key, style));
+        spans.push(Span::styled(format!(" {desc}"), if is_hint { hint_style } else { Style::default() }));
+    }
+
+    let line = Line::from(spans);
+    frame.render_widget(line.centered(), area);
 }
