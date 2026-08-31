@@ -1,8 +1,8 @@
 use ratatui::Frame;
-use ratatui::layout::{Alignment, Constraint, Flex, Layout, Rect};
+use ratatui::layout::{Alignment, Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Stylize};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Clear, List, ListState, Padding, Paragraph, Wrap};
+use ratatui::widgets::{Block, BorderType, Borders, Clear, List, ListState, Padding, Paragraph, Wrap};
 
 use crate::app::{App, Screen, fuzzy_filter_sorted};
 use crate::config;
@@ -14,12 +14,10 @@ pub fn render(frame: &mut Frame, app: &mut App) {
 
     let constraints = [
         Constraint::Length(1),
-        Constraint::Percentage(100),
+        Constraint::Fill(1),
         Constraint::Length(1),
     ];
-    let layout = Layout::vertical(constraints)
-        .flex(Flex::SpaceBetween)
-        .spacing(1);
+    let layout = Layout::vertical(constraints);
     let [top, middle, bottom] = frame.area().layout(&layout);
 
     let title = Line::from_iter([
@@ -112,9 +110,14 @@ pub fn render(frame: &mut Frame, app: &mut App) {
                             Span::from(" No projects available...").bold(),
                             Span::from(" press c to create a project."),
                         ]);
-                        frame.render_widget(empty.left_aligned(), middle);
+                        let block = Block::default()
+                            .borders(Borders::ALL)
+                            .border_type(BorderType::Rounded)
+                            .title("Projects");
+                        let paragraph = Paragraph::new(empty).left_aligned().block(block);
+                        frame.render_widget(paragraph, middle);
                     } else {
-                        render_list(frame, middle, &mut app.list_state, app.list_items.clone());
+                        render_list(frame, middle, &mut app.list_state, app.list_items.clone(), "Projects");
                     }
                 },
                 Screen::EditorList => {
@@ -124,9 +127,14 @@ pub fn render(frame: &mut Frame, app: &mut App) {
                         let empty = Line::from_iter([
                             Span::from(" Failed to get editors...").bold(),
                         ]);
-                        frame.render_widget(empty.left_aligned(), middle);
+                        let block = Block::default()
+                            .borders(Borders::ALL)
+                            .border_type(BorderType::Rounded)
+                            .title("Editors");
+                        let paragraph = Paragraph::new(empty).left_aligned().block(block);
+                        frame.render_widget(paragraph, middle);
                     } else {
-                        render_list(frame, middle, &mut app.list_state, app.list_items.clone());
+                        render_list(frame, middle, &mut app.list_state, app.list_items.clone(), "Editors");
                     }
                 },
                 Screen::CommandList => todo!()
@@ -170,7 +178,6 @@ fn popup_dialogue(
 
     // Chrome: borders (2) + top padding (1) + bottom padding (1) [+ buttons (3) if present]
     let chrome_height: u16 = if has_buttons { 2 + 1 + 1 + 3 } else { 2 + 1 + 1 };
-
     let popup_width = ((area.width as f32 * 0.25) as u16)
         .max(MIN_WIDTH)
         .min(area.width);
@@ -186,8 +193,13 @@ fn popup_dialogue(
         Constraint::Length(popup_width),
         Constraint::Length(popup_height),
     );
+
     frame.render_widget(Clear, centered_area);
-    let popup_block = Block::bordered().title(title);
+
+    let popup_block = Block::bordered()
+        .border_type(BorderType::Rounded)
+        .title(title);
+
     let inner_area = popup_block.inner(centered_area);
     frame.render_widget(popup_block, centered_area);
 
@@ -206,7 +218,9 @@ fn popup_dialogue(
             Constraint::Length(1),           // bottom padding
         ]
     };
+
     let chunks = Layout::vertical(constraints).split(inner_area);
+
     let text_chunk = chunks[1];
 
     let paragraph = Paragraph::new(message.to_string())
@@ -236,14 +250,22 @@ fn popup_dialogue(
         };
         if let Some(label) = ok_label {
             let ok_btn = Paragraph::new(label)
-                .block(Block::bordered().padding(Padding::horizontal(1)))
+                .block(
+                    Block::bordered()
+                        .border_type(BorderType::Rounded)
+                        .padding(Padding::horizontal(1)),
+                )
                 .style(ok_style)
                 .alignment(Alignment::Center);
             frame.render_widget(ok_btn, button_chunks[1]);
         }
         if let Some(label) = cancel_label {
             let cancel_btn = Paragraph::new(label)
-                .block(Block::bordered().padding(Padding::horizontal(1)))
+                .block(
+                    Block::bordered()
+                        .border_type(BorderType::Rounded)
+                        .padding(Padding::horizontal(1)),
+                )
                 .style(cancel_style)
                 .alignment(Alignment::Center);
             frame.render_widget(cancel_btn, button_chunks[3]);
@@ -251,8 +273,14 @@ fn popup_dialogue(
     }
 }
 
-fn render_list(frame: &mut Frame, area: Rect, list_state: &mut ListState, list_items: Vec<String>) {
+fn render_list(frame: &mut Frame, area: Rect, list_state: &mut ListState, list_items: Vec<String>, title: &str) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .title(title);
+
     let list = List::new(list_items)
+        .block(block)
         .style(Color::White)
         .highlight_style(Modifier::REVERSED)
         .highlight_symbol("> ");

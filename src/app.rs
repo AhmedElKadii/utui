@@ -534,20 +534,24 @@ impl App {
                 self.move_selection(false)
             }
             KeyCode::Char('i') => {
-                if let Some(version) = self.list_state.selected()
-                    .and_then(|i| self.all_editors.as_ref()?.get(i))
-                        .map(|(_, v)| v.clone())
+                if let Some((installed, version)) = self.list_state.selected()
+                    .and_then(|idx| self.all_editors.as_ref()?.get(idx))
+                        .map(|(i, v)| (*i, v.clone()))
                 {
-                    self.install_editor(version);
+                    if !installed {
+                        self.install_editor(version);
+                    }
                 }
             }
             // KeyCode::Char('m') => todo!("manage editor version modules"),
             KeyCode::Char('d') => {
-                if let Some(version) = self.list_state.selected()
-                    .and_then(|i| self.all_editors.as_ref()?.get(i))
-                        .map(|(_, v)| v.clone())
+                if let Some((installed, version)) = self.list_state.selected()
+                    .and_then(|idx| self.all_editors.as_ref()?.get(idx))
+                        .map(|(i, v)| (*i, v.clone()))
                 {
-                    self.uninstall_editor(version);
+                    if installed {
+                        self.uninstall_editor(version);
+                    }
                 }
             },
             KeyCode::Esc => {
