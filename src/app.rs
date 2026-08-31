@@ -12,6 +12,7 @@ use std::sync::Arc;
 use crate::dialogue::Dialogue::TimedInfo;
 use crate::dialogue::{Action, Dialogue, DialogueSelection, DialogueState};
 use crate::error::AppError;
+use crate::help::HelpState;
 use crate::input::{InputHandler, InputStep};
 use crate::project::Project;
 use crate::template::Template;
@@ -63,6 +64,8 @@ pub struct App {
     pub tick_counter: u64, 
     pub tasks: Tasks,
     pub declined_login: bool,
+    pub show_help: bool,
+    pub help_state: HelpState,
     unity: Option<Arc<UnityCLI>>
 }
 
@@ -88,6 +91,8 @@ impl App {
             timer: 0,
             tick_counter: 0,
             declined_login: false,
+            show_help: false,
+            help_state: HelpState::new(),
             unity: None,
         }
     }
@@ -452,6 +457,22 @@ impl App {
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> bool {
+        if self.show_help {
+            match key.code {
+                KeyCode::Char('j') | KeyCode::Down => self.help_state.move_selection(true),
+                KeyCode::Char('k') | KeyCode::Up => self.help_state.move_selection(false),
+                KeyCode::Char('?') | KeyCode::Esc => self.show_help = false,
+                KeyCode::Char('q') => return true,
+                _ => {}
+            }
+            return false;
+        }
+
+        if key.code == KeyCode::Char('?') {
+            self.show_help = true;
+            return false;
+        }
+        
         match self.screen {
             Screen::ProjectList => {
                 match self.dialogue.current {
@@ -534,20 +555,24 @@ impl App {
                 self.move_selection(false)
             }
             KeyCode::Char('i') => {
-                if let Some(version) = self.list_state.selected()
-                    .and_then(|i| self.all_editors.as_ref()?.get(i))
-                        .map(|(_, v)| v.clone())
+                if let Some((installed, version)) = self.list_state.selected()
+                    .and_then(|idx| self.all_editors.as_ref()?.get(idx))
+                        .map(|(i, v)| (*i, v.clone()))
                 {
-                    self.install_editor(version);
+                    if !installed {
+                        self.install_editor(version);
+                    }
                 }
             }
             // KeyCode::Char('m') => todo!("manage editor version modules"),
             KeyCode::Char('d') => {
-                if let Some(version) = self.list_state.selected()
-                    .and_then(|i| self.all_editors.as_ref()?.get(i))
-                        .map(|(_, v)| v.clone())
+                if let Some((installed, version)) = self.list_state.selected()
+                    .and_then(|idx| self.all_editors.as_ref()?.get(idx))
+                        .map(|(i, v)| (*i, v.clone()))
                 {
-                    self.uninstall_editor(version);
+                    if installed {
+                        self.uninstall_editor(version);
+                    }
                 }
             },
             KeyCode::Esc => {
