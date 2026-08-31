@@ -76,7 +76,46 @@ impl UnityCLI {
         Ok(data.iter().filter_map(Project::from_json).collect())
     }
 
-    pub fn list_editors(&self) -> Result<Vec<String>, AppError> {
+    pub fn install_editor(&self, editor: &str) -> Result<(), AppError> {
+        let output = self.raw(&["install", editor, "-y", "--resume", "--json"])?;
+
+        let json: Value = serde_json::Deserializer::from_str(output.trim())
+            .into_iter::<Value>()
+            .filter_map(Result::ok)
+            .last()
+            .ok_or_else(|| AppError::Parse(String::from("An unexpected error occured")))?;
+
+        let reason = json
+            .get("data")
+            .and_then(|d| d.get("reason"))
+            .and_then(Value::as_str);
+
+        if reason == Some("no_paused_downloads") {
+            self.raw(&["install", editor, "-y", "--json"])?;
+        }
+
+        Ok(())
+    }
+
+    pub fn uninstall_editor(&self, editor: &str) -> Result<(), AppError> {
+        self.raw(&["uninstall", editor, "-y"])?;
+        Ok(())
+    }
+
+    pub fn list_editors(&self) -> Result<Vec<(bool, String)>, AppError> {
+        let json = self.invoke(&["editors", "list", "--json"])?;
+        let data = json_data_array(&json)?;
+        Ok(data
+            .iter()
+            .filter_map(|entry| {
+                let version = entry.get("version").and_then(Value::as_str)?;
+                let installed = entry.get("location").is_some();
+                Some((installed, version.to_owned()))
+            })
+            .collect())
+    }
+
+    pub fn list_installed_editors(&self) -> Result<Vec<String>, AppError> {
         let json = self.invoke(&["editors", "list", "--installed", "--json"])?;
         let data = json_data_array(&json)?;
         Ok(data
