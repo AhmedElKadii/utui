@@ -10,7 +10,7 @@ permissions:
 
 env:
   BIN_NAME: utui
-  TAP_REPO: kodeflowstudios/homebrew-utui
+  TAP_REPO: kodeflowstudios/homebrew-tap
 
 jobs:
   build:
