@@ -100,7 +100,7 @@ impl App {
             Ok(unity_instance) => {
                 Some(Arc::new(unity_instance))
             }
-            Err(err) => {
+            Err(_) => {
                 app.dialogue.current =
                     Dialogue::Panic("UnityCLI not found, please ensure installation.".to_string());
                 None
@@ -154,10 +154,8 @@ impl App {
                         if all_editors.is_empty() {
                             app.dialogue.current = Dialogue::Error("Failed to fetch editors...".to_string());
                         } else {
+                            app.list_items.clear();
                             app.all_editors = Some(all_editors.clone());
-
-                            let installed_count = 
-                                all_editors.iter().filter(|(installed, _)| *installed).count();
 
                             let editors: Vec<String> = all_editors.into_iter().map(
                                 |(installed, name)| 
@@ -1025,7 +1023,8 @@ impl App {
             return;
         }
 
-        if let Some(index) = self.list_state.selected() {
+        if let Some(index) = self.list_state.selected() &&
+            matches!(self.screen, Screen::ProjectList){
             let should_collapse = self.dialogue.current == Dialogue::None
                 && if next {
                     index < self.list_items.len() - 1
