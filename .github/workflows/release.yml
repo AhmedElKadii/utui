@@ -28,6 +28,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install toml-cli
+        run: cargo install toml-cli
+
+      - name: Update Cargo.toml version
+        run: |
+          NEW_VERSION="${GITHUB_REF_NAME#v}"
+          toml set Cargo.toml package.version "$NEW_VERSION" --output Cargo.toml
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
