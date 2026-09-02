@@ -1,6 +1,5 @@
 pub mod app;
 pub mod command;
-pub mod config;
 pub mod dialogue;
 pub mod error;
 pub mod input;

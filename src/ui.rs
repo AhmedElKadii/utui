@@ -5,7 +5,6 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders, Clear, List, ListState, Padding, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Wrap};
 
 use crate::app::{App, Screen, fuzzy_filter_sorted};
-use crate::config;
 use crate::dialogue::{Dialogue, DialogueSelection};
 use crate::help::render_help_menu;
 use crate::input::InputStep;
@@ -23,7 +22,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
 
     let title = Line::from_iter([
         Span::from(" UTUI").blue().bold(),
-        Span::from(format!(" {}", env!("CARGO_PKG_VERSION"))).gray(),
+        Span::from(format!(" v{}", env!("CARGO_PKG_VERSION"))).gray(),
     ]);
     frame.render_widget(title.left_aligned(), top);
 
