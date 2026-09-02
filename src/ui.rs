@@ -134,7 +134,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
                         let paragraph = Paragraph::new(empty).left_aligned().block(block);
                         frame.render_widget(paragraph, middle);
                     } else {
-                        render_list(frame, middle, &mut app.list_state, app.list_items.clone(), "Projects");
+                        render_list(frame, middle, &mut app.list_state, app.list_items.clone(), "Projects", app.proj_expanded);
                     }
                 },
                 Screen::EditorList => {
@@ -151,7 +151,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
                         let paragraph = Paragraph::new(empty).left_aligned().block(block);
                         frame.render_widget(paragraph, middle);
                     } else {
-                        render_list(frame, middle, &mut app.list_state, app.list_items.clone(), "Editors");
+                        render_list(frame, middle, &mut app.list_state, app.list_items.clone(), "Editors", false);
                     }
                 },
                 Screen::CommandList => todo!()
@@ -292,7 +292,7 @@ fn popup_dialogue(
     }
 }
 
-fn render_list(frame: &mut Frame, area: Rect, list_state: &mut ListState, list_items: Vec<String>, title: &str) {
+fn render_list(frame: &mut Frame, area: Rect, list_state: &mut ListState, list_items: Vec<String>, title: &str, expanded: bool) {
     let total_items = list_items.len();
     let visible_height = area.height.saturating_sub(2) as usize;
 
@@ -305,7 +305,13 @@ fn render_list(frame: &mut Frame, area: Rect, list_state: &mut ListState, list_i
         .block(block)
         .style(Color::White)
         .highlight_style(Modifier::REVERSED)
-        .highlight_symbol("> ");
+        .highlight_symbol(
+            if expanded {
+                " ▼ " 
+            } else {
+                " ▶ "
+            }
+        );
 
     frame.render_stateful_widget(list, area, list_state);
 

@@ -61,6 +61,7 @@ pub struct App {
     pub tasks: Tasks,
     pub declined_login: bool,
     pub show_help: bool,
+    pub proj_expanded: bool,
     pub help_state: HelpState,
     unity: Option<Arc<UnityCLI>>
 }
@@ -87,6 +88,7 @@ impl App {
             timer: 0,
             tick_counter: 0,
             declined_login: false,
+            proj_expanded: false,
             show_help: false,
             help_state: HelpState::new(),
             unity: None,
@@ -1147,6 +1149,7 @@ impl App {
 
         if let Some(project) = self.projects.get(index) {
             self.list_items[index] = project.details_text();
+            self.proj_expanded = true;
         }
     }
 
@@ -1161,6 +1164,7 @@ impl App {
 
         if let Some(project) = self.projects.get(index) {
             self.list_items[index] = project.name.clone();
+            self.proj_expanded = false;
         }
     }
 
@@ -1216,4 +1220,3 @@ pub fn format_duration(d: Duration) -> String {
         format!("{s}s")
     }
 }
-
