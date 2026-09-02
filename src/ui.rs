@@ -23,7 +23,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
 
     let title = Line::from_iter([
         Span::from(" UTUI").blue().bold(),
-        Span::from(format!(" {}", config::VERSION)).gray(),
+        Span::from(format!(" {}", env!("CARGO_PKG_VERSION"))).gray(),
     ]);
     frame.render_widget(title.left_aligned(), top);
 
