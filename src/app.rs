@@ -657,6 +657,7 @@ impl App {
     }
 
     pub fn refresh(&mut self) {
+        self.proj_expanded = false;
         match self.screen {
             Screen::ProjectList => self.refresh_projects(),
             Screen::EditorList => self.refresh_editors(),
